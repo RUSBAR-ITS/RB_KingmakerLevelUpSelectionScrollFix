@@ -1,0 +1,10 @@
+{
+  "Id": "KingmakerCategorizedFeatMultiplier",
+  "DisplayName": "Kingmaker Categorized Feat Multiplier",
+  "Author": "RUSBAR",
+  "Version": "0.3.0",
+  "ManagerVersion": "0.32.0",
+  "AssemblyName": "KingmakerCategorizedFeatMultiplier.dll",
+  "EntryMethod": "KingmakerCategorizedFeatMultiplier.Main.Load",
+  "HomePage": ""
+}
