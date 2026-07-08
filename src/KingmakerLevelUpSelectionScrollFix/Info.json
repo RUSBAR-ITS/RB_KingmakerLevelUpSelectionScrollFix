@@ -1,0 +1,10 @@
+{
+  "Id": "KingmakerLevelUpSelectionScrollFix",
+  "DisplayName": "Kingmaker Level-Up Selection Scroll Fix",
+  "Author": "RUSBAR",
+  "Version": "1.0.0",
+  "ManagerVersion": "0.32.0",
+  "AssemblyName": "KingmakerLevelUpSelectionScrollFix.dll",
+  "EntryMethod": "KingmakerLevelUpSelectionScrollFix.Main.Load",
+  "HomePage": ""
+}

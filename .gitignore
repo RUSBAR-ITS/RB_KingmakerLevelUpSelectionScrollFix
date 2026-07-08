@@ -1,0 +1,25 @@
+# Local game and Unity Mod Manager references.
+/references/*
+
+# Build outputs.
+bin/
+obj/
+/dist/
+
+# IDE and editor state.
+.vscode/
+.vs/
+*.user
+*.suo
+
+# Local agent instructions.
+AGENTS.md
+
+# Logs and temporary files.
+*.log
+*.tmp
+*.bak
+
+# Packaged mod archives.
+*.zip
+*.7z
