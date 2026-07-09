@@ -86,6 +86,7 @@ namespace KingmakerCategorizedFeatMultiplier
                 Settings.Normalize();
                 Settings.Save(modEntry);
                 LevelUpHelperAddFeaturesPatch.ResetDiagnosticsCounters();
+                SelectionSwitchOrderPatch.ResetDiagnosticsCounters();
                 Logger.Info("Settings saved.");
             }
         }
