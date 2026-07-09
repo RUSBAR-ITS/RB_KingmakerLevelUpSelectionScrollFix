@@ -175,6 +175,7 @@ namespace KingmakerLevelUpSelectionScrollFix
             Canvas.ForceUpdateCanvases();
             LayoutRebuilder.ForceRebuildLayoutImmediate(content);
 
+            int activeChildCount = CountActiveChildren(content);
             float contentHeight = GetContentHeight(content);
             float maxHeight = Mathf.Max(1f, Main.Settings.MaxSelectorHeight);
             float viewportHeight = Mathf.Min(contentHeight, maxHeight);
@@ -195,6 +196,7 @@ namespace KingmakerLevelUpSelectionScrollFix
             content.SetSizeWithCurrentAnchors(RectTransform.Axis.Vertical, contentHeight);
 
             LayoutRebuilder.ForceRebuildLayoutImmediate(marker.Wrapper);
+            RebuildParentLayouts(marker.Wrapper, 4);
             marker.ScrollRect.horizontalNormalizedPosition = 0f;
             marker.ScrollRect.verticalNormalizedPosition = verticalPosition;
             marker.LastVerticalNormalizedPosition = verticalPosition;
@@ -213,6 +215,7 @@ namespace KingmakerLevelUpSelectionScrollFix
                     + ", viewportHeight=" + viewportHeight.ToString("0.0")
                     + ", maxHeight=" + maxHeight.ToString("0.0")
                     + ", childCount=" + content.childCount
+                    + ", activeChildCount=" + activeChildCount
                     + ", scrollbar=" + (Main.Settings.ShowScrollbar ? "enabled" : "disabled")
                     + ", verticalPosition=" + verticalPosition.ToString("0.000"));
             }
@@ -220,22 +223,105 @@ namespace KingmakerLevelUpSelectionScrollFix
 
         private static float GetContentHeight(RectTransform content)
         {
-            float height = Mathf.Max(
+            float layoutHeight = Mathf.Max(
                 LayoutUtility.GetMinHeight(content),
                 LayoutUtility.GetPreferredHeight(content));
 
-            if (height <= 1f)
+            float activeBoundsHeight = GetActiveChildrenBoundsHeight(content);
+            if (layoutHeight > 1f && activeBoundsHeight > 1f)
             {
-                height = Mathf.Max(height, content.rect.height);
+                return Mathf.Max(layoutHeight, activeBoundsHeight);
             }
 
-            Bounds childBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(content, content);
-            if (childBounds.size.y > 1f)
+            if (layoutHeight > 1f)
             {
-                height = Mathf.Max(height, childBounds.size.y);
+                return layoutHeight;
             }
 
-            return Mathf.Max(1f, height);
+            if (activeBoundsHeight > 1f)
+            {
+                return activeBoundsHeight;
+            }
+
+            return 1f;
+        }
+
+        private static float GetActiveChildrenBoundsHeight(RectTransform content)
+        {
+            Bounds bounds;
+            if (!TryCalculateActiveChildrenBounds(content, out bounds))
+            {
+                return 0f;
+            }
+
+            return bounds.size.y;
+        }
+
+        private static bool TryCalculateActiveChildrenBounds(RectTransform content, out Bounds bounds)
+        {
+            bounds = new Bounds(Vector3.zero, Vector3.zero);
+            bool hasBounds = false;
+
+            for (int i = 0; i < content.childCount; i++)
+            {
+                Transform child = content.GetChild(i);
+                if (child == null || !child.gameObject.activeSelf)
+                {
+                    continue;
+                }
+
+                RectTransform childRect = child as RectTransform;
+                if (childRect == null)
+                {
+                    continue;
+                }
+
+                Bounds childBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(content, childRect);
+                if (!hasBounds)
+                {
+                    bounds = childBounds;
+                    hasBounds = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(childBounds.min);
+                    bounds.Encapsulate(childBounds.max);
+                }
+            }
+
+            return hasBounds;
+        }
+
+        private static int CountActiveChildren(RectTransform content)
+        {
+            int count = 0;
+            for (int i = 0; i < content.childCount; i++)
+            {
+                Transform child = content.GetChild(i);
+                if (child != null && child.gameObject.activeSelf)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static void RebuildParentLayouts(RectTransform rectTransform, int maxDepth)
+        {
+            Transform current = rectTransform != null ? rectTransform.parent : null;
+            int depth = 0;
+            while (current != null && depth < maxDepth)
+            {
+                RectTransform currentRect = current as RectTransform;
+                if (currentRect != null)
+                {
+                    LayoutRebuilder.ForceRebuildLayoutImmediate(currentRect);
+                }
+
+                current = current.parent;
+                depth++;
+            }
         }
 
         private static Scrollbar CreateVerticalScrollbar(

@@ -1,6 +1,6 @@
 # Kingmaker Level-Up Selection Scroll Fix
 
-Version 1.0.0
+Version 1.0.1
 
 A small Unity Mod Manager / Harmony mod for Pathfinder: Kingmaker that fixes the level-up feature selection UI when too many feature-selection buttons are shown.
 

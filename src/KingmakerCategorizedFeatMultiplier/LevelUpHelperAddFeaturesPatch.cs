@@ -19,6 +19,8 @@ namespace KingmakerCategorizedFeatMultiplier
         private static bool s_CheckedRuntimeCompatibility;
         private static readonly Dictionary<LevelUpState, List<GeneratedSelectionRecord>> s_GeneratedSelectionsByState =
             new Dictionary<LevelUpState, List<GeneratedSelectionRecord>>();
+        private static readonly Dictionary<LevelUpState, int> s_ReconciledSettingsGenerationByState =
+            new Dictionary<LevelUpState, int>();
 
         internal static void ResetDiagnosticsCounters()
         {
@@ -27,6 +29,7 @@ namespace KingmakerCategorizedFeatMultiplier
 
         internal static void NotifySettingsChanged()
         {
+            s_ReconciledSettingsGenerationByState.Clear();
         }
 
         [HarmonyPriority(Priority.First)]
@@ -132,6 +135,15 @@ namespace KingmakerCategorizedFeatMultiplier
 
             int maxMultiplier = 1;
             int requestedSelectionAdds = 0;
+            int reconciledSelectionAdds;
+            int reconciledSelectionRemovals;
+
+            ReconcileTrackedSelectionsForState(
+                state,
+                settings,
+                ref mutated,
+                out reconciledSelectionAdds,
+                out reconciledSelectionRemovals);
 
             for (int i = 0; i < features.Count; i++)
             {
@@ -185,27 +197,35 @@ namespace KingmakerCategorizedFeatMultiplier
                 SelectionPlan plan = selectionPlans[i];
                 int existingGenerated = CountGeneratedSelections(state, source, plan.Selection, level);
 
-                if (existingGenerated > 0 && existingGenerated != plan.Multiplier)
+                if (existingGenerated > plan.Multiplier)
                 {
-                    int removed = RemoveGeneratedSelections(state, source, plan.Selection, level);
+                    int removed = RemoveExcessGeneratedSelections(
+                        state,
+                        source,
+                        plan.Selection,
+                        level,
+                        plan.Category,
+                        plan.Multiplier);
                     removedGeneratedSelections += removed;
-                    existingGenerated = 0;
+                    existingGenerated -= removed;
                     if (removed > 0)
                     {
                         mutated = true;
                     }
                 }
 
-                if (existingGenerated > 0)
+                if (existingGenerated >= plan.Multiplier)
                 {
-                    reusedGeneratedSelections += existingGenerated;
+                    reusedGeneratedSelections += plan.Multiplier;
                     selectionPlans[i] = plan.WithAddsRequired(0);
                     continue;
                 }
 
-                actualSelectionAdds += plan.Multiplier;
-                maxAddsRequired = Math.Max(maxAddsRequired, plan.Multiplier);
-                selectionPlans[i] = plan.WithAddsRequired(plan.Multiplier);
+                int addsRequired = plan.Multiplier - existingGenerated;
+                reusedGeneratedSelections += existingGenerated;
+                actualSelectionAdds += addsRequired;
+                maxAddsRequired = Math.Max(maxAddsRequired, addsRequired);
+                selectionPlans[i] = plan.WithAddsRequired(addsRequired);
             }
 
             for (int round = 0; round < maxAddsRequired; round++)
@@ -242,6 +262,8 @@ namespace KingmakerCategorizedFeatMultiplier
                     + ", actualSelectionAdds=" + actualSelectionAdds
                     + ", reusedGeneratedSelections=" + reusedGeneratedSelections
                     + ", removedGeneratedSelections=" + removedGeneratedSelections
+                    + ", reconciledSelectionAdds=" + reconciledSelectionAdds
+                    + ", reconciledSelectionRemovals=" + reconciledSelectionRemovals
                     + ", directFeatureGrants=" + directFeatures.Count
                     + ", maxMultiplier=" + maxMultiplier
                     + ", settingsGeneration=" + settings.SettingsGeneration
@@ -280,16 +302,167 @@ namespace KingmakerCategorizedFeatMultiplier
             if (records.Count == 0)
             {
                 s_GeneratedSelectionsByState.Remove(state);
+                s_ReconciledSettingsGenerationByState.Remove(state);
             }
 
             return count;
         }
 
-        private static int RemoveGeneratedSelections(
+        private static void ReconcileTrackedSelectionsForState(
+            LevelUpState state,
+            Settings settings,
+            ref bool mutated,
+            out int added,
+            out int removed)
+        {
+            added = 0;
+            removed = 0;
+
+            int reconciledGeneration;
+            if (s_ReconciledSettingsGenerationByState.TryGetValue(state, out reconciledGeneration)
+                && reconciledGeneration == settings.SettingsGeneration)
+            {
+                return;
+            }
+
+            List<GeneratedSelectionRecord> records;
+            if (!s_GeneratedSelectionsByState.TryGetValue(state, out records))
+            {
+                s_ReconciledSettingsGenerationByState[state] = settings.SettingsGeneration;
+                return;
+            }
+
+            PruneDeadRecords(state, records);
+            if (records.Count == 0)
+            {
+                s_GeneratedSelectionsByState.Remove(state);
+                s_ReconciledSettingsGenerationByState[state] = settings.SettingsGeneration;
+                return;
+            }
+
+            List<SelectionRecordGroup> groups = BuildSelectionRecordGroups(records);
+            for (int i = 0; i < groups.Count; i++)
+            {
+                SelectionRecordGroup group = groups[i];
+                int desiredCount = settings.GetMultiplier(group.Category);
+                int currentCount = CountGeneratedSelectionsInRecords(
+                    records,
+                    group.Source,
+                    group.Selection,
+                    group.Level,
+                    group.Category);
+
+                if (currentCount > desiredCount)
+                {
+                    int removedForGroup = RemoveExcessGeneratedSelections(
+                        state,
+                        group.Source,
+                        group.Selection,
+                        group.Level,
+                        group.Category,
+                        desiredCount);
+                    removed += removedForGroup;
+                    mutated = mutated || removedForGroup > 0;
+                    currentCount -= removedForGroup;
+                }
+
+                while (currentCount < desiredCount)
+                {
+                    FeatureSelectionState addedSelection = state.AddSelection(
+                        null,
+                        group.Source,
+                        group.Selection,
+                        group.Level);
+                    TrackGeneratedSelection(state, group.Source, group.Selection, group.Level, addedSelection, group.Category);
+                    added++;
+                    currentCount++;
+                    mutated = true;
+                }
+            }
+
+            s_ReconciledSettingsGenerationByState[state] = settings.SettingsGeneration;
+
+            if ((added > 0 || removed > 0) && settings.LogAddFeaturesCalls)
+            {
+                Logger.Info(
+                    "Reconciled tracked level-up selections for settings generation "
+                    + settings.SettingsGeneration
+                    + ". added=" + added
+                    + ", removed=" + removed
+                    + ", groups=" + groups.Count);
+            }
+        }
+
+        private static void PruneDeadRecords(LevelUpState state, List<GeneratedSelectionRecord> records)
+        {
+            for (int i = records.Count - 1; i >= 0; i--)
+            {
+                if (!IsSelectionRecordAlive(state, records[i]))
+                {
+                    records.RemoveAt(i);
+                }
+            }
+        }
+
+        private static List<SelectionRecordGroup> BuildSelectionRecordGroups(List<GeneratedSelectionRecord> records)
+        {
+            List<SelectionRecordGroup> groups = new List<SelectionRecordGroup>();
+            for (int i = 0; i < records.Count; i++)
+            {
+                GeneratedSelectionRecord record = records[i];
+                bool found = false;
+                for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
+                {
+                    SelectionRecordGroup group = groups[groupIndex];
+                    if (IsSameGeneratedSelectionKey(record, group.Source, group.Selection, group.Level)
+                        && record.Category == group.Category)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+
+                if (!found)
+                {
+                    groups.Add(new SelectionRecordGroup(
+                        record.Source,
+                        record.Selection,
+                        record.Level,
+                        record.Category));
+                }
+            }
+
+            return groups;
+        }
+
+        private static int CountGeneratedSelectionsInRecords(
+            List<GeneratedSelectionRecord> records,
+            BlueprintScriptableObject source,
+            BlueprintFeatureSelection selection,
+            int level,
+            FeatureSelectionCategory category)
+        {
+            int count = 0;
+            for (int i = 0; i < records.Count; i++)
+            {
+                GeneratedSelectionRecord record = records[i];
+                if (record.Category == category
+                    && IsSameGeneratedSelectionKey(record, source, selection, level))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static int RemoveExcessGeneratedSelections(
             LevelUpState state,
             BlueprintScriptableObject source,
             BlueprintFeatureSelection selection,
-            int level)
+            int level,
+            FeatureSelectionCategory category,
+            int desiredCount)
         {
             List<GeneratedSelectionRecord> records;
             if (!s_GeneratedSelectionsByState.TryGetValue(state, out records))
@@ -297,30 +470,68 @@ namespace KingmakerCategorizedFeatMultiplier
                 return 0;
             }
 
+            int currentCount = CountGeneratedSelectionsInRecords(records, source, selection, level, category);
             int removed = 0;
-            for (int i = records.Count - 1; i >= 0; i--)
+            while (currentCount > desiredCount)
             {
-                GeneratedSelectionRecord record = records[i];
-                if (!IsSameGeneratedSelectionKey(record, source, selection, level))
+                int recordIndex = FindHighestIndexGeneratedSelectionIndex(
+                    records,
+                    source,
+                    selection,
+                    level,
+                    category);
+                if (recordIndex < 0)
                 {
-                    continue;
+                    break;
                 }
 
+                GeneratedSelectionRecord record = records[recordIndex];
                 if (state.Selections != null && record.SelectionState != null)
                 {
                     state.Selections.Remove(record.SelectionState);
                 }
 
-                records.RemoveAt(i);
+                records.RemoveAt(recordIndex);
                 removed++;
+                currentCount--;
             }
 
             if (records.Count == 0)
             {
                 s_GeneratedSelectionsByState.Remove(state);
+                s_ReconciledSettingsGenerationByState.Remove(state);
             }
 
             return removed;
+        }
+
+        private static int FindHighestIndexGeneratedSelectionIndex(
+            List<GeneratedSelectionRecord> records,
+            BlueprintScriptableObject source,
+            BlueprintFeatureSelection selection,
+            int level,
+            FeatureSelectionCategory category)
+        {
+            int bestRecordIndex = -1;
+            int bestSelectionIndex = int.MinValue;
+            for (int i = records.Count - 1; i >= 0; i--)
+            {
+                GeneratedSelectionRecord record = records[i];
+                if (record.Category != category
+                    || !IsSameGeneratedSelectionKey(record, source, selection, level))
+                {
+                    continue;
+                }
+
+                int selectionIndex = record.SelectionState != null ? record.SelectionState.Index : int.MinValue;
+                if (selectionIndex > bestSelectionIndex)
+                {
+                    bestSelectionIndex = selectionIndex;
+                    bestRecordIndex = i;
+                }
+            }
+
+            return bestRecordIndex;
         }
 
         private static void TrackGeneratedSelection(
@@ -597,6 +808,26 @@ namespace KingmakerCategorizedFeatMultiplier
                 Selection = selection;
                 Level = level;
                 SelectionState = selectionState;
+                Category = category;
+            }
+        }
+
+        private struct SelectionRecordGroup
+        {
+            public readonly BlueprintScriptableObject Source;
+            public readonly BlueprintFeatureSelection Selection;
+            public readonly int Level;
+            public readonly FeatureSelectionCategory Category;
+
+            public SelectionRecordGroup(
+                BlueprintScriptableObject source,
+                BlueprintFeatureSelection selection,
+                int level,
+                FeatureSelectionCategory category)
+            {
+                Source = source;
+                Selection = selection;
+                Level = level;
                 Category = category;
             }
         }
