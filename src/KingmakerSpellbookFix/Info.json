@@ -1,0 +1,10 @@
+{
+  "Id": "KingmakerSpellbookFix",
+  "DisplayName": "Kingmaker Spellbook Fix",
+  "Author": "RUSBAR",
+  "Version": "0.1.1",
+  "ManagerVersion": "0.32.0",
+  "AssemblyName": "KingmakerSpellbookFix.dll",
+  "EntryMethod": "KingmakerSpellbookFix.Main.Load",
+  "HomePage": ""
+}
