@@ -1,0 +1,10 @@
+{
+  "Id": "KingmakerLargePartyFix",
+  "DisplayName": "Kingmaker Large Party Fix",
+  "Author": "RUSBAR",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.32.0",
+  "AssemblyName": "KingmakerLargePartyFix.dll",
+  "EntryMethod": "KingmakerLargePartyFix.Main.Load",
+  "HomePage": ""
+}

@@ -1,0 +1,10 @@
+{
+  "Id": "KingmakerPartySelectionExpansion",
+  "DisplayName": "Kingmaker Party Selection Expansion",
+  "Author": "RUSBAR",
+  "Version": "0.1.0",
+  "ManagerVersion": "0.32.0",
+  "AssemblyName": "KingmakerPartySelectionExpansion.dll",
+  "EntryMethod": "KingmakerPartySelectionExpansion.Main.Load",
+  "HomePage": ""
+}

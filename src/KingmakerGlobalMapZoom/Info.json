@@ -1,0 +1,10 @@
+{
+  "Id": "KingmakerGlobalMapZoom",
+  "DisplayName": "Kingmaker Camera Zoom",
+  "Author": "RUSBAR",
+  "Version": "0.2.0",
+  "ManagerVersion": "0.32.0",
+  "AssemblyName": "KingmakerGlobalMapZoom.dll",
+  "EntryMethod": "KingmakerGlobalMapZoom.Main.Load",
+  "HomePage": ""
+}

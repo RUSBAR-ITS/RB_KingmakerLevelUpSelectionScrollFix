@@ -1,0 +1,22 @@
+{
+  "Settings.Title": "Camera zoom",
+  "Settings.Language": "Language",
+  "Settings.Language.Russian": "\u0420\u0443\u0441\u0441\u043a\u0438\u0439",
+  "Settings.Language.English": "English",
+  "Settings.EnablePatch": "Enable mod (requires mod reload if changed)",
+  "Settings.GlobalMapSection": "Global map",
+  "Settings.ApplyWhenEnteringGlobalMap": "Apply when entering the global map",
+  "Settings.GlobalMapFov": "Global map FOV (10-170)",
+  "Settings.LocalMapSection": "Local map",
+  "Settings.EnableLocalMapZoom": "Control local map zoom",
+  "Settings.LocalMapFovMin": "Local map minimum FOV (1-170)",
+  "Settings.LocalMapFovMax": "Local map maximum FOV (1-170)",
+  "Settings.BagOfTricksHint": "If Bag of Tricks Camera Zoom Unlocked is enabled, disable it so the mods do not fight over the camera.",
+  "Settings.ApplyOnSettingsSave": "Apply when settings are saved",
+  "Settings.ApplyNow": "Apply now",
+  "Settings.ApplyNowHint": "On the global map the FOV is applied immediately; on the local map the zoom limits are refreshed.",
+  "Settings.Diagnostics": "Diagnostics",
+  "Settings.LogDiagnostics": "Write diagnostic messages to the log",
+  "Settings.MaxDiagnosticLogs": "Maximum diagnostic messages",
+  "Settings.ActiveValue": "active"
+}
