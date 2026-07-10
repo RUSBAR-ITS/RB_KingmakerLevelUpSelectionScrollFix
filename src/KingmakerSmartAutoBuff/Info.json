@@ -1,0 +1,10 @@
+{
+  "Id": "KingmakerSmartAutoBuff",
+  "DisplayName": "Kingmaker Smart Auto Buff",
+  "Author": "RUSBAR",
+  "Version": "0.2.1",
+  "ManagerVersion": "0.32.0",
+  "AssemblyName": "KingmakerSmartAutoBuff.dll",
+  "EntryMethod": "KingmakerSmartAutoBuff.Main.Load",
+  "HomePage": ""
+}
