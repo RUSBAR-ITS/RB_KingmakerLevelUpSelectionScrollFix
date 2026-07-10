@@ -12,6 +12,11 @@ namespace KingmakerSmartAutoBuff
         internal UnitUseAbility CurrentCommand;
         internal ResolvedCastTask CurrentTask;
         internal SpellCatalogEntry CurrentEntry;
+        internal List<Kingmaker.EntitySystem.Entities.UnitEntityData> CurrentExpectedRecipients;
+        internal PartyGatherController CurrentGather;
+        internal ResolvedCastTask PendingGatherTask;
+        internal SpellCatalogEntry PendingGatherEntry;
+        internal List<Kingmaker.EntitySystem.Entities.UnitEntityData> PendingGatherRecipients;
         internal float CurrentCommandTime;
         internal float DelayRemaining;
         internal int CastCount;

@@ -155,14 +155,14 @@ namespace KingmakerSmartAutoBuff
                     action.Metamagic = new List<string>();
                 }
 
-                if (action.TargetIds == null)
+                if (action.RecipientIds == null)
                 {
-                    action.TargetIds = new List<string>();
+                    action.RecipientIds = new List<string>();
                 }
 
-                if (action.TargetNames == null)
+                if (action.RecipientNames == null)
                 {
-                    action.TargetNames = new List<string>();
+                    action.RecipientNames = new List<string>();
                 }
             }
         }

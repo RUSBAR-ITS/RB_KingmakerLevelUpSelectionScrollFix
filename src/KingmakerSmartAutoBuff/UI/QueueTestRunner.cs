@@ -31,11 +31,11 @@ namespace KingmakerSmartAutoBuff
                     continue;
                 }
 
-                List<string> currentTargets = ResolveCurrentTargetNames(action, currentEntry);
-                if (currentEntry.TargetKind != TargetKind.NoTarget && currentTargets.Count == 0)
+                List<string> currentRecipients = ResolveCurrentRecipientNames(action);
+                if (RequiresRecipients(currentEntry) && currentRecipients.Count == 0)
                 {
                     Logger.Info(
-                        "Would skip: no selected target is currently available. caster="
+                        "Would skip: no selected recipient is currently available. caster="
                         + action.CasterName
                         + ", spell="
                         + action.SpellName
@@ -50,48 +50,54 @@ namespace KingmakerSmartAutoBuff
                     + currentEntry.SpellName
                     + ", metamagic="
                     + currentEntry.MetamagicText
-                    + ", targets="
-                    + UiHelpers.ListOrNone(currentTargets)
+                    + ", delivery="
+                    + currentEntry.BuffProfile.DeliveryKind
+                    + ", recipients="
+                    + UiHelpers.ListOrNone(currentRecipients)
                     + ".");
             }
         }
 
-        private static List<string> ResolveCurrentTargetNames(BuffQueueAction action, SpellCatalogEntry entry)
+        private static bool RequiresRecipients(SpellCatalogEntry entry)
         {
-            if (entry.TargetKind == TargetKind.NoTarget)
-            {
-                return new List<string>();
-            }
+            AbilityBuffProfile profile = entry != null ? entry.BuffProfile : null;
+            return profile != null
+                && profile.DeliveryKind != BuffDeliveryKind.Unsupported
+                && profile.DeliveryKind != BuffDeliveryKind.Unknown;
+        }
 
-            if (entry.TargetKind == TargetKind.Self)
-            {
-                return new List<string> { entry.CasterName };
-            }
-
-            List<TargetOption> currentOptions = SpellCatalog.BuildTargetOptions(entry);
+        private static List<string> ResolveCurrentRecipientNames(BuffQueueAction action)
+        {
             List<string> result = new List<string>();
 
-            for (int i = 0; i < action.TargetIds.Count; i++)
+            if (action.RecipientIds == null || action.RecipientIds.Count == 0)
             {
-                string targetId = action.TargetIds[i];
-                string targetName = i < action.TargetNames.Count ? action.TargetNames[i] : string.Empty;
-                TargetOption current = currentOptions.FirstOrDefault(target =>
-                    string.Equals(target.Id, targetId, StringComparison.Ordinal)
-                    || string.Equals(target.Name, targetName, StringComparison.Ordinal));
-
-                if (current != null)
+                if (!string.IsNullOrEmpty(action.CastTargetName))
                 {
-                    result.Add(current.Name);
+                    result.Add(action.CastTargetName);
+                }
+
+                return result;
+            }
+
+            for (int i = 0; i < action.RecipientIds.Count; i++)
+            {
+                string recipientId = action.RecipientIds[i];
+                string recipientName = i < action.RecipientNames.Count ? action.RecipientNames[i] : string.Empty;
+                Kingmaker.EntitySystem.Entities.UnitEntityData unit = SpellCatalog.FindPartyUnit(recipientId, recipientName);
+                if (unit != null)
+                {
+                    result.Add(SpellCatalog.SafeUnitName(unit));
                 }
                 else
                 {
                     Logger.Info(
-                        "Would skip target: target is no longer available. caster="
+                        "Would skip recipient: recipient is no longer available. caster="
                         + action.CasterName
                         + ", spell="
                         + action.SpellName
-                        + ", target="
-                        + targetName
+                        + ", recipient="
+                        + recipientName
                         + ".");
                 }
             }

@@ -19,44 +19,33 @@ namespace KingmakerSmartAutoBuff
                 return;
             }
 
-            if (entry.TargetKind == TargetKind.Unsupported)
+            if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Unsupported)
             {
                 GUILayout.Label(ModLocalization.T("Targets.Unsupported"));
                 GUILayout.EndVertical();
                 return;
             }
 
-            if (entry.TargetKind == TargetKind.NoTarget)
+            bool recipientSelection = entry.BuffProfile != null
+                && entry.BuffProfile.IsFriendlyBuff
+                && (entry.BuffProfile.IsAreaBuff || entry.BuffProfile.DeliveryKind == BuffDeliveryKind.WholeParty);
+
+            if (recipientSelection)
+            {
+                GUILayout.Label(ModLocalization.T("Targets.Recipients"));
+                DrawTargetButtons(state);
+            }
+            else if (entry.TargetKind == TargetKind.NoTarget)
             {
                 GUILayout.Label(ModLocalization.T("Targets.NoTarget"));
             }
-            else if (entry.TargetKind == TargetKind.Self)
+            else if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Personal)
             {
                 GUILayout.Label(ModLocalization.T("Targets.FixedSelf") + ": " + entry.CasterName);
             }
             else
             {
-                if (state.TargetOptions.Count == 0)
-                {
-                    GUILayout.Label(ModLocalization.T("Targets.NoneAvailable"));
-                }
-
-                GUILayout.BeginHorizontal();
-                foreach (TargetOption target in state.TargetOptions)
-                {
-                    bool selected = state.SelectedTargetIds.Contains(target.Id);
-                    bool nextSelected = GUILayout.Toggle(selected, target.Name, "Button", GUILayout.Width(UiLayout.TargetButtonWidth));
-                    if (nextSelected && !selected)
-                    {
-                        state.SelectedTargetIds.Add(target.Id);
-                    }
-                    else if (!nextSelected && selected)
-                    {
-                        state.SelectedTargetIds.Remove(target.Id);
-                    }
-                }
-
-                GUILayout.EndHorizontal();
+                DrawTargetButtons(state);
             }
 
             GUILayout.BeginHorizontal();
@@ -71,6 +60,31 @@ namespace KingmakerSmartAutoBuff
             GUILayout.EndHorizontal();
 
             GUILayout.EndVertical();
+        }
+
+        private static void DrawTargetButtons(UiState state)
+        {
+            if (state.TargetOptions.Count == 0)
+            {
+                GUILayout.Label(ModLocalization.T("Targets.NoneAvailable"));
+            }
+
+            GUILayout.BeginHorizontal();
+            foreach (TargetOption target in state.TargetOptions)
+            {
+                bool selected = state.SelectedTargetIds.Contains(target.Id);
+                bool nextSelected = GUILayout.Toggle(selected, target.Name, "Button", GUILayout.Width(UiLayout.TargetButtonWidth));
+                if (nextSelected && !selected)
+                {
+                    state.SelectedTargetIds.Add(target.Id);
+                }
+                else if (!nextSelected && selected)
+                {
+                    state.SelectedTargetIds.Remove(target.Id);
+                }
+            }
+
+            GUILayout.EndHorizontal();
         }
     }
 }

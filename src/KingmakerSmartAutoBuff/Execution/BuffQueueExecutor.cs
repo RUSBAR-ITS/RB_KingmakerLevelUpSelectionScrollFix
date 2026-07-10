@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using Kingmaker;
+using Kingmaker.EntitySystem.Entities;
+using Kingmaker.UnitLogic.Abilities;
 using Kingmaker.UnitLogic.Commands;
 using Kingmaker.Utility;
 
@@ -97,6 +99,12 @@ namespace KingmakerSmartAutoBuff
                 return;
             }
 
+            if (m_State.CurrentGather != null)
+            {
+                UpdateCurrentGather(deltaTime);
+                return;
+            }
+
             if (m_State.CurrentCommand != null)
             {
                 UpdateCurrentCommand(deltaTime);
@@ -120,71 +128,221 @@ namespace KingmakerSmartAutoBuff
                 m_State.NextTaskIndex++;
 
                 SpellCatalogEntry entry;
-                Kingmaker.EntitySystem.Entities.UnitEntityData targetUnit;
-                TargetWrapper target;
                 string reason;
-                if (!CastAvailabilityChecker.TryResolve(task, out entry, out targetUnit, out target, out reason))
+                if (!ResolveEntry(task, out entry, out reason))
                 {
                     RegisterSkip(task, reason);
                     continue;
                 }
 
-                if (m_State.Mode == QueueExecutionMode.Smart && ShouldSkipAlreadyActiveBuff(task, entry, targetUnit, out reason))
+                AbilityBuffProfile profile = entry.BuffProfile ?? AbilityBuffProfileReader.Read(entry.Ability);
+                DumpProfileIfNeeded(entry, profile);
+
+                if (!IsAbilityCurrentlyAvailable(entry.Ability, out reason))
                 {
                     RegisterSkip(task, reason);
                     continue;
                 }
 
-                UnitUseAbility command;
-                if (!CastCommandRunner.TryRun(entry, target, out command, out reason))
+                if (profile.IsFriendlyBuff && (profile.IsAreaBuff || profile.DeliveryKind == BuffDeliveryKind.WholeParty))
                 {
-                    RegisterFailure(task, reason);
+                    if (StartAreaTask(task, entry, profile))
+                    {
+                        return;
+                    }
+
                     continue;
                 }
 
-                m_State.CurrentTask = task;
-                m_State.CurrentEntry = entry;
-                m_State.CurrentCommand = command;
-                m_State.CurrentCommandTime = 0f;
-                m_State.LastMessage = string.Format(
-                    ModLocalization.T("Execution.Status.Casting"),
-                    m_State.CompletedTasks,
-                    m_State.TotalTasks,
-                    entry.CasterName,
-                    entry.SpellName,
-                    ResolveDisplayTarget(task, entry));
-
-                Logger.Info(
-                    "Execution casting. caster="
-                    + entry.CasterName
-                    + ", spell="
-                    + entry.SpellName
-                    + ", target="
-                    + ResolveDisplayTarget(task, entry)
-                    + ".");
-                return;
+                if (StartDirectTask(task, entry, profile))
+                {
+                    return;
+                }
             }
 
             Complete();
         }
 
-        private static bool ShouldSkipAlreadyActiveBuff(
-            ResolvedCastTask task,
-            SpellCatalogEntry entry,
-            Kingmaker.EntitySystem.Entities.UnitEntityData targetUnit,
-            out string reason)
+        private bool StartDirectTask(ResolvedCastTask task, SpellCatalogEntry entry, AbilityBuffProfile profile)
         {
-            reason = string.Empty;
-            ActiveBuffInfo matchedBuff;
-            if (!ActiveBuffHelper.HasBuffFromAbility(targetUnit, entry, out matchedBuff))
+            UnitEntityData targetUnit = ResolveDirectTarget(task, entry, profile);
+            if (targetUnit == null)
             {
+                RegisterSkip(task, ModLocalization.T("Execution.Skip.TargetUnavailable"));
                 return false;
             }
 
-            reason = string.Format(
-                ModLocalization.T("Execution.Skip.BuffAlreadyActive"),
-                matchedBuff != null ? matchedBuff.DisplayName : ResolveDisplayTarget(task, entry));
+            if (m_State.Mode == QueueExecutionMode.Smart)
+            {
+                ActiveBuffInfo matchedBuff;
+                if (ActiveBuffHelper.HasAnyProfileBuff(targetUnit, profile, entry, out matchedBuff))
+                {
+                    RegisterSkip(
+                        task,
+                        string.Format(
+                            ModLocalization.T("Execution.Skip.BuffAlreadyActive"),
+                            matchedBuff != null ? matchedBuff.DisplayName : SpellCatalog.SafeUnitName(targetUnit)));
+                    return false;
+                }
+            }
+
+            TargetWrapper target = targetUnit;
+            string reason;
+            if (ShouldCheckCanTarget(entry.TargetKind) && !CanTarget(entry.Ability, target, out reason))
+            {
+                RegisterSkip(task, reason);
+                return false;
+            }
+
+            UnitUseAbility command;
+            if (!CastCommandRunner.TryRun(entry, target, out command, out reason))
+            {
+                RegisterFailure(task, reason);
+                return false;
+            }
+
+            SetCurrentCommand(task, entry, command, new List<UnitEntityData> { targetUnit }, ResolveDisplayTarget(task, entry));
             return true;
+        }
+
+        private bool StartAreaTask(ResolvedCastTask task, SpellCatalogEntry entry, AbilityBuffProfile profile)
+        {
+            List<UnitEntityData> selectedRecipients = QueueActionResolver.ResolveRecipients(task.Action);
+            if (selectedRecipients.Count == 0)
+            {
+                RegisterSkip(task, ModLocalization.T("Execution.Skip.TargetUnavailable"));
+                return false;
+            }
+
+            BuffRecipientPlan plan = BuffRecipientPlanner.Plan(entry, profile, selectedRecipients, m_State.Mode);
+            if (plan.RecipientsNeedingBuff.Count == 0)
+            {
+                RegisterSkip(task, ModLocalization.T("Execution.Skip.AllRecipientsAlreadyBuffed"));
+                return false;
+            }
+
+            if (profile.DeliveryKind == BuffDeliveryKind.WholeParty)
+            {
+                return RunAreaCastNow(task, entry, profile, plan.RecipientsNeedingBuff);
+            }
+
+            if (profile.RadiusMeters <= 0.01f)
+            {
+                Logger.Warning("Area buff has no detected radius. spell=" + entry.SpellName + ".");
+                return RunAreaCastNow(task, entry, profile, plan.RecipientsNeedingBuff);
+            }
+
+            m_State.CurrentGather = new PartyGatherController(entry.Caster, plan.RecipientsNeedingBuff, profile.RadiusMeters);
+            m_State.PendingGatherTask = task;
+            m_State.PendingGatherEntry = entry;
+            m_State.PendingGatherRecipients = plan.RecipientsNeedingBuff;
+            m_State.LastMessage = string.Format(
+                ModLocalization.T("Execution.Status.Gathering"),
+                entry.SpellName,
+                plan.RecipientsNeedingBuff.Count);
+
+            if (m_State.CurrentGather.IsFinished)
+            {
+                UpdateCurrentGather(0f);
+            }
+
+            return true;
+        }
+
+        private void UpdateCurrentGather(float deltaTime)
+        {
+            m_State.CurrentGather.Update(deltaTime);
+            if (!m_State.CurrentGather.IsFinished)
+            {
+                return;
+            }
+
+            PartyGatherController gather = m_State.CurrentGather;
+            ResolvedCastTask task = m_State.PendingGatherTask;
+            SpellCatalogEntry entry = m_State.PendingGatherEntry;
+            List<UnitEntityData> recipients = gather.ArrivedRecipients;
+
+            m_State.CurrentGather = null;
+            m_State.PendingGatherTask = null;
+            m_State.PendingGatherEntry = null;
+            m_State.PendingGatherRecipients = null;
+
+            Logger.Info("Gather finished. spell=" + (entry != null ? entry.SpellName : "<spell>") + ", " + gather.Summary() + ".");
+
+            if (recipients.Count == 0)
+            {
+                RegisterSkip(task, ModLocalization.T("Execution.Skip.NoRecipientsGathered"));
+                return;
+            }
+
+            RunAreaCastNow(task, entry, entry.BuffProfile, recipients);
+        }
+
+        private bool RunAreaCastNow(
+            ResolvedCastTask task,
+            SpellCatalogEntry entry,
+            AbilityBuffProfile profile,
+            List<UnitEntityData> expectedRecipients)
+        {
+            string reason;
+            UnitUseAbility command;
+            bool started;
+
+            if (profile != null && profile.DeliveryKind == BuffDeliveryKind.PointCenteredArea)
+            {
+                started = CastCommandRunner.TryRunAtPoint(entry, entry.Caster.Position, out command, out reason);
+            }
+            else
+            {
+                TargetWrapper target = entry.Caster;
+                if (CanTarget(entry.Ability, target, out reason))
+                {
+                    started = CastCommandRunner.TryRun(entry, target, out command, out reason);
+                }
+                else
+                {
+                    started = CastCommandRunner.TryRunAtPoint(entry, entry.Caster.Position, out command, out reason);
+                }
+            }
+
+            if (!started)
+            {
+                RegisterFailure(task, reason);
+                return false;
+            }
+
+            SetCurrentCommand(task, entry, command, expectedRecipients, QueueActionResolver.FormatUnitList(expectedRecipients));
+            return true;
+        }
+
+        private void SetCurrentCommand(
+            ResolvedCastTask task,
+            SpellCatalogEntry entry,
+            UnitUseAbility command,
+            List<UnitEntityData> expectedRecipients,
+            string displayTarget)
+        {
+            m_State.CurrentTask = task;
+            m_State.CurrentEntry = entry;
+            m_State.CurrentCommand = command;
+            m_State.CurrentExpectedRecipients = expectedRecipients;
+            m_State.CurrentCommandTime = 0f;
+            m_State.LastMessage = string.Format(
+                ModLocalization.T("Execution.Status.Casting"),
+                m_State.CompletedTasks,
+                m_State.TotalTasks,
+                entry.CasterName,
+                entry.SpellName,
+                displayTarget);
+
+            Logger.Info(
+                "Execution casting. caster="
+                + entry.CasterName
+                + ", spell="
+                + entry.SpellName
+                + ", recipients="
+                + displayTarget
+                + ".");
         }
 
         private void UpdateCurrentCommand(float deltaTime)
@@ -196,22 +354,25 @@ namespace KingmakerSmartAutoBuff
                 UnitUseAbility command = m_State.CurrentCommand;
                 ResolvedCastTask task = m_State.CurrentTask;
                 SpellCatalogEntry entry = m_State.CurrentEntry;
+                List<UnitEntityData> expectedRecipients = m_State.CurrentExpectedRecipients;
 
                 m_State.CurrentCommand = null;
                 m_State.CurrentTask = null;
                 m_State.CurrentEntry = null;
+                m_State.CurrentExpectedRecipients = null;
                 m_State.CurrentCommandTime = 0f;
 
                 if (command.Result == Kingmaker.UnitLogic.Commands.Base.UnitCommand.ResultType.Success)
                 {
                     m_State.CastCount++;
+                    VerifyCastResult(entry, expectedRecipients);
                     Logger.Info(
                         "Execution cast finished. caster="
                         + entry.CasterName
                         + ", spell="
                         + entry.SpellName
-                        + ", target="
-                        + ResolveDisplayTarget(task, entry)
+                        + ", recipients="
+                        + QueueActionResolver.FormatUnitList(expectedRecipients)
                         + ".");
                 }
                 else
@@ -245,9 +406,71 @@ namespace KingmakerSmartAutoBuff
                 m_State.CurrentCommand = null;
                 m_State.CurrentTask = null;
                 m_State.CurrentEntry = null;
+                m_State.CurrentExpectedRecipients = null;
                 m_State.CurrentCommandTime = 0f;
                 m_State.DelayRemaining = Main.Settings != null ? Main.Settings.DelayBetweenCasts : 0.2f;
             }
+        }
+
+        private void VerifyCastResult(SpellCatalogEntry entry, List<UnitEntityData> expectedRecipients)
+        {
+            if (entry == null || expectedRecipients == null || expectedRecipients.Count == 0)
+            {
+                return;
+            }
+
+            BuffApplicationResult result = BuffApplicationVerifier.VerifyRecipients(entry, entry.BuffProfile, expectedRecipients);
+            if (result.Missing.Count > 0)
+            {
+                Logger.Warning(
+                    "Buff verification missing recipients. spell="
+                    + entry.SpellName
+                    + ", missing="
+                    + QueueActionResolver.FormatUnitList(result.Missing)
+                    + ".");
+            }
+            else
+            {
+                Logger.Info("Buff verification ok. spell=" + entry.SpellName + ", covered=" + result.Covered.Count + ".");
+            }
+        }
+
+        private bool ResolveEntry(ResolvedCastTask task, out SpellCatalogEntry entry, out string reason)
+        {
+            entry = null;
+            reason = string.Empty;
+
+            if (task == null || task.Action == null)
+            {
+                reason = ModLocalization.T("Execution.Skip.EmptyAction");
+                return false;
+            }
+
+            entry = SpellCatalog.FindCurrentEntry(task.Action);
+            if (entry == null)
+            {
+                reason = ModLocalization.T("Execution.Skip.SpellUnavailable");
+                return false;
+            }
+
+            if (entry.BuffProfile == null || entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Unsupported)
+            {
+                reason = ModLocalization.T("Execution.Skip.UnsupportedTarget");
+                return false;
+            }
+
+            return true;
+        }
+
+        private static UnitEntityData ResolveDirectTarget(ResolvedCastTask task, SpellCatalogEntry entry, AbilityBuffProfile profile)
+        {
+            if (profile != null && profile.DeliveryKind == BuffDeliveryKind.Personal)
+            {
+                return entry.Caster;
+            }
+
+            UnitEntityData target = QueueActionResolver.ResolveCastTarget(task.Action);
+            return target ?? entry.Caster;
         }
 
         private void RegisterSkip(ResolvedCastTask task, string reason)
@@ -265,8 +488,8 @@ namespace KingmakerSmartAutoBuff
                 + task.Action.CasterName
                 + ", spell="
                 + task.Action.SpellName
-                + ", target="
-                + ResolveDisplayTarget(task, null)
+                + ", recipients="
+                + UiHelpers.ListOrNone(task.Action.RecipientNames)
                 + ", reason="
                 + reason
                 + ".");
@@ -287,8 +510,8 @@ namespace KingmakerSmartAutoBuff
                 + task.Action.CasterName
                 + ", spell="
                 + task.Action.SpellName
-                + ", target="
-                + ResolveDisplayTarget(task, null)
+                + ", recipients="
+                + UiHelpers.ListOrNone(task.Action.RecipientNames)
                 + ", reason="
                 + reason
                 + ".");
@@ -345,22 +568,95 @@ namespace KingmakerSmartAutoBuff
 
         private static string ResolveDisplayTarget(ResolvedCastTask task, SpellCatalogEntry entry)
         {
-            if (entry != null && entry.TargetKind == TargetKind.Self)
-            {
-                return entry.CasterName;
-            }
-
-            if (task == null)
+            if (task == null || task.Action == null)
             {
                 return ModLocalization.T("Common.None");
             }
 
-            if (!string.IsNullOrEmpty(task.TargetName))
+            if (!string.IsNullOrEmpty(task.Action.CastTargetName))
             {
-                return task.TargetName;
+                return task.Action.CastTargetName;
             }
 
-            return ModLocalization.T("Common.None");
+            if (entry != null && entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Personal)
+            {
+                return entry.CasterName;
+            }
+
+            return UiHelpers.ListOrNone(task.Action.RecipientNames);
+        }
+
+        private static bool IsAbilityCurrentlyAvailable(AbilityData ability, out string reason)
+        {
+            reason = string.Empty;
+            if (ability == null)
+            {
+                reason = ModLocalization.T("Execution.Skip.SpellUnavailable");
+                return false;
+            }
+
+            try
+            {
+                if (!ability.IsAvailable || !ability.IsAvailableForCast)
+                {
+                    reason = SafeUnavailableReason(ability);
+                    if (string.IsNullOrEmpty(reason))
+                    {
+                        reason = ModLocalization.T("Execution.Skip.SpellUnavailable");
+                    }
+
+                    return false;
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Exception("Failed to check ability availability.", ex);
+                reason = ModLocalization.T("Execution.Skip.SpellUnavailable");
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool ShouldCheckCanTarget(TargetKind targetKind)
+        {
+            return targetKind == TargetKind.Self
+                || targetKind == TargetKind.SelectedAlly
+                || targetKind == TargetKind.SelectedAllyOrSelf
+                || targetKind == TargetKind.SelectedAny;
+        }
+
+        private static bool CanTarget(AbilityData ability, TargetWrapper target, out string reason)
+        {
+            reason = string.Empty;
+            try
+            {
+                if (ability != null && target != null && ability.CanTarget(target))
+                {
+                    return true;
+                }
+
+                reason = ModLocalization.T("Execution.Skip.BadTarget");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                Logger.Exception("Failed to check ability target.", ex);
+                reason = ModLocalization.T("Execution.Skip.BadTarget");
+                return false;
+            }
+        }
+
+        private static string SafeUnavailableReason(AbilityData ability)
+        {
+            try
+            {
+                return ability.GetUnavailableReason();
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private static bool IsInCombat()
@@ -373,6 +669,33 @@ namespace KingmakerSmartAutoBuff
             {
                 return false;
             }
+        }
+
+        private static void DumpProfileIfNeeded(SpellCatalogEntry entry, AbilityBuffProfile profile)
+        {
+            if (Main.Settings == null || !Main.Settings.LogDiagnostics || entry == null || profile == null)
+            {
+                return;
+            }
+
+            Logger.Info(
+                "Spell profile. spell="
+                + entry.SpellName
+                + ", blueprint="
+                + entry.SpellBlueprintId
+                + ", delivery="
+                + profile.DeliveryKind
+                + ", friendly="
+                + profile.IsFriendlyBuff
+                + ", area="
+                + profile.IsAreaBuff
+                + ", radius="
+                + profile.RadiusMeters.ToString("0.##")
+                + ", buffs="
+                + string.Join(",", profile.AppliedBuffNames.ToArray())
+                + ", diagnostics="
+                + string.Join(" > ", profile.Diagnostics.ToArray())
+                + ".");
         }
     }
 }

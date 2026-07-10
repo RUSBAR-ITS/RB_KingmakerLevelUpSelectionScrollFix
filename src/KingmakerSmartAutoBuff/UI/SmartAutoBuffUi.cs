@@ -106,7 +106,17 @@ namespace KingmakerSmartAutoBuff
                 return;
             }
 
-            if (entry.TargetKind == TargetKind.Self && entry.Caster != null)
+            if (IsRecipientSelectionMode(entry) && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.WholeParty)
+            {
+                foreach (TargetOption target in State.TargetOptions)
+                {
+                    State.SelectedTargetIds.Add(target.Id);
+                }
+
+                return;
+            }
+
+            if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Personal && entry.Caster != null)
             {
                 State.SelectedTargetIds.Add(SpellCatalog.GetUnitId(entry.Caster));
             }
@@ -115,12 +125,22 @@ namespace KingmakerSmartAutoBuff
         internal bool CanAddSelectedSpell()
         {
             SpellCatalogEntry entry = CurrentSpellEntry();
-            if (entry == null || entry.TargetKind == TargetKind.Unsupported)
+            if (entry == null)
             {
                 return false;
             }
 
-            if (entry.TargetKind == TargetKind.NoTarget || entry.TargetKind == TargetKind.Self)
+            if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Unsupported)
+            {
+                return false;
+            }
+
+            if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Personal)
+            {
+                return true;
+            }
+
+            if (entry.TargetKind == TargetKind.NoTarget)
             {
                 return true;
             }
@@ -137,24 +157,59 @@ namespace KingmakerSmartAutoBuff
                 return;
             }
 
-            BuffQueueAction action = new BuffQueueAction();
-            action.CasterId = entry.CasterId;
-            action.CasterName = entry.CasterName;
-            action.SpellbookId = entry.SpellbookId;
-            action.SpellbookName = entry.SpellbookName;
-            action.SpellBlueprintId = entry.SpellBlueprintId;
-            action.SpellLevel = entry.SpellLevel;
-            action.SpellName = entry.SpellName;
-            action.Metamagic = new List<string>(entry.MetamagicNames);
-            action.TargetKind = entry.TargetKind;
-
-            foreach (TargetOption target in SelectedTargetsForEntry(entry))
+            int added = 0;
+            if (IsRecipientSelectionMode(entry))
             {
-                action.TargetIds.Add(target.Id);
-                action.TargetNames.Add(target.Name);
+                BuffQueueAction action = CreateBaseAction(entry);
+                action.CastTargetId = entry.CasterId;
+                action.CastTargetName = entry.CasterName;
+
+                foreach (TargetOption target in SelectedTargetsForEntry(entry))
+                {
+                    action.RecipientIds.Add(target.Id);
+                    action.RecipientNames.Add(target.Name);
+                }
+
+                file.Queue.Actions.Add(action);
+                added++;
+            }
+            else if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Personal)
+            {
+                BuffQueueAction action = CreateBaseAction(entry);
+                action.CastTargetId = entry.CasterId;
+                action.CastTargetName = entry.CasterName;
+                action.RecipientIds.Add(entry.CasterId);
+                action.RecipientNames.Add(entry.CasterName);
+                file.Queue.Actions.Add(action);
+                added++;
+            }
+            else if (entry.TargetKind == TargetKind.NoTarget)
+            {
+                BuffQueueAction action = CreateBaseAction(entry);
+                action.CastTargetId = entry.CasterId;
+                action.CastTargetName = entry.CasterName;
+                file.Queue.Actions.Add(action);
+                added++;
+            }
+            else
+            {
+                foreach (TargetOption target in SelectedTargetsForEntry(entry))
+                {
+                    BuffQueueAction action = CreateBaseAction(entry);
+                    action.CastTargetId = target.Id;
+                    action.CastTargetName = target.Name;
+                    action.RecipientIds.Add(target.Id);
+                    action.RecipientNames.Add(target.Name);
+                    file.Queue.Actions.Add(action);
+                    added++;
+                }
             }
 
-            file.Queue.Actions.Add(action);
+            if (added == 0)
+            {
+                return;
+            }
+
             State.SelectedActionIndex = file.Queue.Actions.Count - 1;
             QueueRepository.Save(file);
             State.Status = ModLocalization.T("Status.ActionAdded");
@@ -252,7 +307,7 @@ namespace KingmakerSmartAutoBuff
 
         private IEnumerable<TargetOption> SelectedTargetsForEntry(SpellCatalogEntry entry)
         {
-            if (entry.TargetKind == TargetKind.Self && entry.Caster != null)
+            if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Personal && entry.Caster != null)
             {
                 yield return new TargetOption
                 {
@@ -276,6 +331,29 @@ namespace KingmakerSmartAutoBuff
                     yield return target;
                 }
             }
+        }
+
+        private static BuffQueueAction CreateBaseAction(SpellCatalogEntry entry)
+        {
+            BuffQueueAction action = new BuffQueueAction();
+            action.CasterId = entry.CasterId;
+            action.CasterName = entry.CasterName;
+            action.SpellbookId = entry.SpellbookId;
+            action.SpellbookName = entry.SpellbookName;
+            action.SpellBlueprintId = entry.SpellBlueprintId;
+            action.SpellLevel = entry.SpellLevel;
+            action.SpellName = entry.SpellName;
+            action.Metamagic = new List<string>(entry.MetamagicNames);
+            action.DeliveryKind = entry.BuffProfile != null ? entry.BuffProfile.DeliveryKind : BuffDeliveryKind.Unknown;
+            return action;
+        }
+
+        private static bool IsRecipientSelectionMode(SpellCatalogEntry entry)
+        {
+            AbilityBuffProfile profile = entry != null ? entry.BuffProfile : null;
+            return profile != null
+                && profile.IsFriendlyBuff
+                && (profile.IsAreaBuff || profile.DeliveryKind == BuffDeliveryKind.WholeParty);
         }
     }
 }

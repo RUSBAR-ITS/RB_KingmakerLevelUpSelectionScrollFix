@@ -30,6 +30,7 @@ namespace KingmakerSmartAutoBuff
         internal List<string> MetamagicNames = new List<string>();
         internal string TargetSummary;
         internal TargetKind TargetKind;
+        internal AbilityBuffProfile BuffProfile;
         internal int AvailableCasts;
     }
 

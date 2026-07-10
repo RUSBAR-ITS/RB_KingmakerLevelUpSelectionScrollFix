@@ -52,7 +52,7 @@ namespace KingmakerSmartAutoBuff
                 GUILayout.Space(UiLayout.ColumnGap);
                 GUILayout.Label(MetamagicLocalization.ListOrNone(action.Metamagic), GUILayout.Width(UiLayout.MetamagicColumnWidth));
                 GUILayout.Space(UiLayout.ColumnGap);
-                GUILayout.Label(UiHelpers.ListOrNone(action.TargetNames), GUILayout.Width(UiLayout.QueueTargetColumnWidth));
+                GUILayout.Label(FormatActionTarget(action), GUILayout.Width(UiLayout.QueueTargetColumnWidth));
                 GUILayout.EndHorizontal();
             }
 
@@ -95,6 +95,29 @@ namespace KingmakerSmartAutoBuff
             GUILayout.EndHorizontal();
 
             GUILayout.EndVertical();
+        }
+
+        private static string FormatActionTarget(BuffQueueAction action)
+        {
+            if (action == null)
+            {
+                return ModLocalization.T("Common.None");
+            }
+
+            if (action.DeliveryKind == BuffDeliveryKind.CasterCenteredArea
+                || action.DeliveryKind == BuffDeliveryKind.PointCenteredArea
+                || action.DeliveryKind == BuffDeliveryKind.SelectedUnitCenteredArea
+                || action.DeliveryKind == BuffDeliveryKind.WholeParty)
+            {
+                return ModLocalization.T("Column.Recipients") + ": " + UiHelpers.ListOrNone(action.RecipientNames);
+            }
+
+            if (!string.IsNullOrEmpty(action.CastTargetName))
+            {
+                return ModLocalization.T("Column.Target") + ": " + action.CastTargetName;
+            }
+
+            return UiHelpers.ListOrNone(action.RecipientNames);
         }
     }
 }

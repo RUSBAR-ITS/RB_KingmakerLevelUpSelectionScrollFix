@@ -12,8 +12,10 @@ namespace KingmakerSmartAutoBuff
         public int SpellLevel;
         public string SpellName;
         public List<string> Metamagic = new List<string>();
-        public TargetKind TargetKind;
-        public List<string> TargetIds = new List<string>();
-        public List<string> TargetNames = new List<string>();
+        public BuffDeliveryKind DeliveryKind;
+        public string CastTargetId;
+        public string CastTargetName;
+        public List<string> RecipientIds = new List<string>();
+        public List<string> RecipientNames = new List<string>();
     }
 }

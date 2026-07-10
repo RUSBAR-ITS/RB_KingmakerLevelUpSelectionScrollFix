@@ -107,7 +107,12 @@ namespace KingmakerSmartAutoBuff
                 return entry.Caster;
             }
 
-            return SpellCatalog.FindPartyUnit(task.TargetId, task.TargetName);
+            if (task == null || task.Action == null)
+            {
+                return null;
+            }
+
+            return SpellCatalog.FindPartyUnit(task.Action.CastTargetId, task.Action.CastTargetName);
         }
 
         private static bool IsAbilityCurrentlyAvailable(AbilityData ability, out string reason)

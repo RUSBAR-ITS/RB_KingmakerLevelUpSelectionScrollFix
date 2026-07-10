@@ -61,6 +61,72 @@ namespace KingmakerSmartAutoBuff
             return false;
         }
 
+        internal static bool HasAnyProfileBuff(
+            UnitEntityData target,
+            AbilityBuffProfile profile,
+            SpellCatalogEntry entry,
+            out ActiveBuffInfo matchedBuff)
+        {
+            matchedBuff = null;
+            if (target == null)
+            {
+                return false;
+            }
+
+            foreach (ActiveBuffInfo buff in GetActiveBuffs(target))
+            {
+                if (MatchesProfile(buff, profile))
+                {
+                    matchedBuff = buff;
+                    return true;
+                }
+            }
+
+            return HasBuffFromAbility(target, entry, out matchedBuff);
+        }
+
+        internal static List<ActiveBuffInfo> GetMatchingProfileBuffs(
+            UnitEntityData target,
+            AbilityBuffProfile profile,
+            SpellCatalogEntry entry)
+        {
+            List<ActiveBuffInfo> result = new List<ActiveBuffInfo>();
+            if (target == null)
+            {
+                return result;
+            }
+
+            foreach (ActiveBuffInfo buff in GetActiveBuffs(target))
+            {
+                if (MatchesProfile(buff, profile))
+                {
+                    result.Add(buff);
+                }
+            }
+
+            if (result.Count == 0)
+            {
+                ActiveBuffInfo matched;
+                if (HasBuffFromAbility(target, entry, out matched))
+                {
+                    result.Add(matched);
+                }
+            }
+
+            return result;
+        }
+
+        private static bool MatchesProfile(ActiveBuffInfo buff, AbilityBuffProfile profile)
+        {
+            if (buff == null || profile == null || profile.AppliedBuffBlueprintIds == null)
+            {
+                return false;
+            }
+
+            return !string.IsNullOrEmpty(buff.BuffBlueprintId)
+                && profile.AppliedBuffBlueprintIds.Contains(buff.BuffBlueprintId);
+        }
+
         private static ActiveBuffInfo CreateInfo(Buff buff)
         {
             if (buff == null)

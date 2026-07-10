@@ -18,7 +18,13 @@ namespace KingmakerSmartAutoBuff
                 return result;
             }
 
-            if (entry.TargetKind == TargetKind.Self)
+            AbilityBuffProfile profile = entry.BuffProfile;
+            if (profile != null && profile.IsFriendlyBuff && (profile.IsAreaBuff || profile.DeliveryKind == BuffDeliveryKind.WholeParty))
+            {
+                return BuildPartyTargetOptions();
+            }
+
+            if (profile != null && profile.DeliveryKind == BuffDeliveryKind.Personal)
             {
                 if (entry.Caster != null)
                 {
@@ -28,7 +34,7 @@ namespace KingmakerSmartAutoBuff
                 return result;
             }
 
-            if (entry.TargetKind == TargetKind.NoTarget || entry.TargetKind == TargetKind.Unsupported)
+            if (profile != null && profile.DeliveryKind == BuffDeliveryKind.Unsupported)
             {
                 return result;
             }
@@ -47,6 +53,17 @@ namespace KingmakerSmartAutoBuff
             }
 
             return result
+                .GroupBy(target => target.Id)
+                .Select(group => group.First())
+                .OrderBy(target => target.Name)
+                .ToList();
+        }
+
+        private static List<TargetOption> BuildPartyTargetOptions()
+        {
+            return PartyProvider.GetActiveParty()
+                .Where(unit => unit != null)
+                .Select(CreateTargetOption)
                 .GroupBy(target => target.Id)
                 .Select(group => group.First())
                 .OrderBy(target => target.Name)

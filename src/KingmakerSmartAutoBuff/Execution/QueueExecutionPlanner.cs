@@ -19,24 +19,7 @@ namespace KingmakerSmartAutoBuff
                     continue;
                 }
 
-                if (action.TargetKind == TargetKind.Self
-                    || action.TargetKind == TargetKind.NoTarget
-                    || action.TargetIds == null
-                    || action.TargetIds.Count == 0)
-                {
-                    tasks.Add(new ResolvedCastTask(CloneAction(action), string.Empty, string.Empty));
-                    continue;
-                }
-
-                for (int i = 0; i < action.TargetIds.Count; i++)
-                {
-                    string targetId = action.TargetIds[i];
-                    string targetName = action.TargetNames != null && i < action.TargetNames.Count
-                        ? action.TargetNames[i]
-                        : string.Empty;
-
-                    tasks.Add(new ResolvedCastTask(CloneAction(action), targetId, targetName));
-                }
+                tasks.Add(new ResolvedCastTask(CloneAction(action)));
             }
 
             return tasks;
@@ -55,12 +38,14 @@ namespace KingmakerSmartAutoBuff
             clone.Metamagic = action.Metamagic != null
                 ? new List<string>(action.Metamagic)
                 : new List<string>();
-            clone.TargetKind = action.TargetKind;
-            clone.TargetIds = action.TargetIds != null
-                ? new List<string>(action.TargetIds)
+            clone.DeliveryKind = action.DeliveryKind;
+            clone.CastTargetId = action.CastTargetId;
+            clone.CastTargetName = action.CastTargetName;
+            clone.RecipientIds = action.RecipientIds != null
+                ? new List<string>(action.RecipientIds)
                 : new List<string>();
-            clone.TargetNames = action.TargetNames != null
-                ? new List<string>(action.TargetNames)
+            clone.RecipientNames = action.RecipientNames != null
+                ? new List<string>(action.RecipientNames)
                 : new List<string>();
             return clone;
         }

@@ -31,7 +31,8 @@ namespace KingmakerSmartAutoBuff
             entry.MetamagicNames = GetMetamagicNames(ability);
             entry.MetamagicText = MetamagicLocalization.ListOrNone(entry.MetamagicNames);
             entry.TargetKind = TargetResolver.DetermineTargetKind(ability);
-            entry.TargetSummary = TargetResolver.LocalizeTargetKind(entry.TargetKind);
+            entry.BuffProfile = AbilityBuffProfileReader.Read(ability);
+            entry.TargetSummary = AbilityBuffProfileReader.LocalizeDeliveryKind(entry.BuffProfile.DeliveryKind);
             entry.AvailableCasts = availableCasts;
             return entry;
         }
