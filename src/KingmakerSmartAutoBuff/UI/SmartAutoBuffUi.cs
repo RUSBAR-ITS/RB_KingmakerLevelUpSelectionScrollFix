@@ -40,6 +40,7 @@ namespace KingmakerSmartAutoBuff
             settings.Normalize();
 
             SettingsPanel.Draw(this, settings);
+            ExecutionReportPanel.Draw(this);
 
             if (!settings.EnableMod)
             {

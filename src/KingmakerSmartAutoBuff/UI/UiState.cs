@@ -17,6 +17,7 @@ namespace KingmakerSmartAutoBuff
         internal Vector2 DescriptionScroll;
         internal Vector2 EditScroll;
         internal Vector2 EditTargetsScroll;
+        internal Vector2 ExecutionReportScroll;
 
         internal int SelectedQueueIndex;
         internal int SelectedCasterIndex;
@@ -25,6 +26,7 @@ namespace KingmakerSmartAutoBuff
         internal int EditingActionIndex = -1;
         internal int LevelFilter = -1;
         internal BuffQueueAction EditingActionDraft;
+        internal bool ShowExecutionReportDetails;
 
         internal string NewQueueName = "Daily buffs";
         internal string RenameQueueText = string.Empty;

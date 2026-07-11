@@ -8,5 +8,6 @@ namespace KingmakerSmartAutoBuff
         }
 
         internal BuffQueueAction Action;
+        internal QueueActionReport ReportAction;
     }
 }

@@ -25,5 +25,6 @@ namespace KingmakerSmartAutoBuff
         internal const int EditGridColumns = 6;
         internal const float EditCandidatesHeight = 72f;
         internal const float EditTargetsHeight = 150f;
+        internal const float ExecutionReportHeight = 180f;
     }
 }

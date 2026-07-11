@@ -10,15 +10,18 @@ namespace KingmakerSmartAutoBuff
 {
     internal sealed class BuffQueueExecutor
     {
-        private const float InitialBuffVerificationDelay = 0.35f;
-        private const float BuffVerificationRetryDelay = 0.25f;
-        private const float BuffVerificationTimeout = 1.5f;
-
+        private readonly BuffVerificationTracker m_VerificationTracker = new BuffVerificationTracker();
+        private readonly QueueExecutionReportController m_ReportController = new QueueExecutionReportController();
         private QueueExecutionState m_State;
 
         internal bool IsRunning
         {
             get { return m_State != null; }
+        }
+
+        internal QueueExecutionReport LatestReport
+        {
+            get { return m_ReportController.LatestReport; }
         }
 
         internal string StatusText
@@ -59,6 +62,7 @@ namespace KingmakerSmartAutoBuff
             m_State.QueueName = file.Queue.Name;
             m_State.Mode = mode;
             m_State.Tasks = tasks;
+            m_State.Report = m_ReportController.Create(m_State.QueueName, mode, tasks);
             m_State.LastMessage = string.Format(
                 ModLocalization.T("Execution.Status.Started"),
                 m_State.QueueName,
@@ -86,12 +90,29 @@ namespace KingmakerSmartAutoBuff
                 ? ModLocalization.T("Execution.Status.Stopped")
                 : reason;
 
+            ResolvedCastTask activeTask = m_State.CurrentTask ?? m_State.PendingGatherTask;
+            if (activeTask != null && activeTask.ReportAction != null)
+            {
+                activeTask.ReportAction.ExecutionStatus = QueueActionExecutionStatus.Stopped;
+                activeTask.ReportAction.ExecutionMessage = message;
+            }
+
+            if (m_State.Report != null)
+            {
+                m_State.Report.IsCastingFinished = true;
+                m_State.Report.WasStopped = true;
+                m_State.Report.StopReason = message;
+            }
+
             Logger.Info("Execution stopped. queue=" + m_State.QueueName + ", reason=" + message + ".");
             SetIdleMessage(message);
         }
 
         internal void Update(float deltaTime)
         {
+            m_VerificationTracker.Update(deltaTime);
+            m_ReportController.Update(m_State != null);
+
             if (m_State == null)
             {
                 return;
@@ -112,12 +133,6 @@ namespace KingmakerSmartAutoBuff
             if (m_State.CurrentCommand != null)
             {
                 UpdateCurrentCommand(deltaTime);
-                return;
-            }
-
-            if (m_State.PendingVerificationEntry != null)
-            {
-                UpdatePendingVerification(deltaTime);
                 return;
             }
 
@@ -337,6 +352,14 @@ namespace KingmakerSmartAutoBuff
             m_State.CurrentCommand = command;
             m_State.CurrentExpectedRecipients = expectedRecipients;
             m_State.CurrentCommandTime = 0f;
+            if (task != null && task.ReportAction != null)
+            {
+                task.ReportAction.ExecutionStatus = QueueActionExecutionStatus.Casting;
+                task.ReportAction.CasterName = entry != null ? entry.CasterName : task.ReportAction.CasterName;
+                task.ReportAction.RecipientNames = FormatRecipientNames(expectedRecipients);
+                task.ReportAction.ExecutionMessage = string.Empty;
+            }
+
             m_State.LastMessage = string.Format(
                 ModLocalization.T("Execution.Status.Casting"),
                 m_State.CompletedTasks,
@@ -375,6 +398,12 @@ namespace KingmakerSmartAutoBuff
                 if (command.Result == Kingmaker.UnitLogic.Commands.Base.UnitCommand.ResultType.Success)
                 {
                     m_State.CastCount++;
+                    if (task != null && task.ReportAction != null)
+                    {
+                        task.ReportAction.ExecutionStatus = QueueActionExecutionStatus.CastSucceeded;
+                        task.ReportAction.ExecutionMessage = string.Empty;
+                    }
+
                     Logger.Info(
                         "Execution cast finished. caster="
                         + entry.CasterName
@@ -383,11 +412,23 @@ namespace KingmakerSmartAutoBuff
                         + ", recipients="
                         + QueueActionResolver.FormatUnitList(expectedRecipients)
                         + ".");
-                    ScheduleBuffVerification(entry, expectedRecipients);
+                    m_VerificationTracker.Schedule(
+                        task != null ? task.ReportAction : null,
+                        entry,
+                        expectedRecipients);
+                    ScheduleCastDelay();
                 }
                 else
                 {
                     m_State.FailCount++;
+                    if (task != null && task.ReportAction != null)
+                    {
+                        task.ReportAction.ExecutionStatus = QueueActionExecutionStatus.Failed;
+                        task.ReportAction.ExecutionMessage = string.Format(
+                            ModLocalization.T("Execution.Failure.CommandResult"),
+                            command.Result);
+                    }
+
                     Logger.Info(
                         "Execution command finished without success. result="
                         + command.Result
@@ -413,6 +454,12 @@ namespace KingmakerSmartAutoBuff
                     + ".");
                 TryInterruptCurrentCommand();
                 m_State.FailCount++;
+                if (m_State.CurrentTask != null && m_State.CurrentTask.ReportAction != null)
+                {
+                    m_State.CurrentTask.ReportAction.ExecutionStatus = QueueActionExecutionStatus.Failed;
+                    m_State.CurrentTask.ReportAction.ExecutionMessage = ModLocalization.T("Execution.Failure.CommandTimedOut");
+                }
+
                 m_State.CurrentCommand = null;
                 m_State.CurrentTask = null;
                 m_State.CurrentEntry = null;
@@ -420,89 +467,6 @@ namespace KingmakerSmartAutoBuff
                 m_State.CurrentCommandTime = 0f;
                 ScheduleCastDelay();
             }
-        }
-
-        private void ScheduleBuffVerification(SpellCatalogEntry entry, List<UnitEntityData> expectedRecipients)
-        {
-            if (entry == null || expectedRecipients == null || expectedRecipients.Count == 0)
-            {
-                ScheduleCastDelay();
-                return;
-            }
-
-            m_State.PendingVerificationEntry = entry;
-            m_State.PendingVerificationRecipients = new List<UnitEntityData>(expectedRecipients);
-            m_State.PendingVerificationElapsed = 0f;
-            m_State.PendingVerificationNextCheck = InitialBuffVerificationDelay;
-        }
-
-        private void UpdatePendingVerification(float deltaTime)
-        {
-            m_State.PendingVerificationElapsed += Math.Max(0f, deltaTime);
-            m_State.PendingVerificationNextCheck -= Math.Max(0f, deltaTime);
-            if (m_State.PendingVerificationNextCheck > 0f)
-            {
-                return;
-            }
-
-            SpellCatalogEntry entry = m_State.PendingVerificationEntry;
-            List<UnitEntityData> recipients = m_State.PendingVerificationRecipients;
-            bool finalAttempt = m_State.PendingVerificationElapsed >= BuffVerificationTimeout;
-            if (TryVerifyCastResult(entry, recipients, finalAttempt))
-            {
-                ClearPendingVerification();
-                ScheduleCastDelay();
-                return;
-            }
-
-            if (finalAttempt)
-            {
-                ClearPendingVerification();
-                ScheduleCastDelay();
-                return;
-            }
-
-            m_State.PendingVerificationNextCheck = BuffVerificationRetryDelay;
-        }
-
-        private bool TryVerifyCastResult(
-            SpellCatalogEntry entry,
-            List<UnitEntityData> expectedRecipients,
-            bool logMissingRecipients)
-        {
-            if (entry == null || expectedRecipients == null || expectedRecipients.Count == 0)
-            {
-                return true;
-            }
-
-            BuffApplicationResult result = BuffApplicationVerifier.VerifyRecipients(entry, entry.BuffProfile, expectedRecipients);
-            if (result.Missing.Count > 0)
-            {
-                if (logMissingRecipients)
-                {
-                    Logger.Warning(
-                        "Buff verification missing recipients. spell="
-                        + entry.SpellName
-                        + ", missing="
-                        + QueueActionResolver.FormatUnitList(result.Missing)
-                        + ", waited="
-                        + m_State.PendingVerificationElapsed.ToString("0.##")
-                        + "s.");
-                }
-
-                return false;
-            }
-
-            Logger.Info("Buff verification ok. spell=" + entry.SpellName + ", covered=" + result.Covered.Count + ".");
-            return true;
-        }
-
-        private void ClearPendingVerification()
-        {
-            m_State.PendingVerificationEntry = null;
-            m_State.PendingVerificationRecipients = null;
-            m_State.PendingVerificationElapsed = 0f;
-            m_State.PendingVerificationNextCheck = 0f;
         }
 
         private void ScheduleCastDelay()
@@ -551,6 +515,12 @@ namespace KingmakerSmartAutoBuff
         private void RegisterSkip(ResolvedCastTask task, string reason)
         {
             m_State.SkipCount++;
+            if (task != null && task.ReportAction != null)
+            {
+                task.ReportAction.ExecutionStatus = QueueActionExecutionStatus.Skipped;
+                task.ReportAction.ExecutionMessage = reason ?? string.Empty;
+            }
+
             m_State.LastMessage = string.Format(
                 ModLocalization.T("Execution.Status.Skipped"),
                 m_State.CompletedTasks,
@@ -573,6 +543,12 @@ namespace KingmakerSmartAutoBuff
         private void RegisterFailure(ResolvedCastTask task, string reason)
         {
             m_State.FailCount++;
+            if (task != null && task.ReportAction != null)
+            {
+                task.ReportAction.ExecutionStatus = QueueActionExecutionStatus.Failed;
+                task.ReportAction.ExecutionMessage = reason ?? string.Empty;
+            }
+
             m_State.LastMessage = string.Format(
                 ModLocalization.T("Execution.Status.Failed"),
                 m_State.CompletedTasks,
@@ -594,15 +570,30 @@ namespace KingmakerSmartAutoBuff
 
         private void Complete()
         {
-            string message = string.Format(
-                ModLocalization.T("Execution.Status.Completed"),
-                m_State.QueueName,
-                m_State.CastCount,
-                m_State.SkipCount,
-                m_State.FailCount);
+            QueueExecutionReport report = m_State.Report;
+            if (report != null)
+            {
+                report.IsCastingFinished = true;
+            }
+
+            int pendingChecks = report != null ? report.PendingVerificationCount : 0;
+            string message = pendingChecks > 0
+                ? string.Format(
+                    ModLocalization.T("Execution.Status.CompletedPending"),
+                    m_State.QueueName,
+                    m_State.CastCount,
+                    m_State.SkipCount,
+                    m_State.FailCount,
+                    pendingChecks)
+                : string.Format(
+                    ModLocalization.T("Execution.Status.Completed"),
+                    m_State.QueueName,
+                    m_State.CastCount,
+                    m_State.SkipCount,
+                    m_State.FailCount);
 
             Logger.Info(
-                "Execution completed. queue="
+                "Execution casts completed. queue="
                 + m_State.QueueName
                 + ", mode="
                 + m_State.Mode
@@ -612,9 +603,27 @@ namespace KingmakerSmartAutoBuff
                 + m_State.SkipCount
                 + ", failed="
                 + m_State.FailCount
+                + ", pendingVerification="
+                + pendingChecks
                 + ".");
 
             SetIdleMessage(message);
+        }
+
+        private static List<string> FormatRecipientNames(List<UnitEntityData> recipients)
+        {
+            List<string> names = new List<string>();
+            if (recipients == null)
+            {
+                return names;
+            }
+
+            foreach (UnitEntityData recipient in recipients)
+            {
+                names.Add(SpellCatalog.SafeUnitName(recipient));
+            }
+
+            return names;
         }
 
         private void TryInterruptCurrentCommand()

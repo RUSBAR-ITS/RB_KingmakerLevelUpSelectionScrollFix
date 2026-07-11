@@ -18,10 +18,7 @@ namespace KingmakerSmartAutoBuff
         internal ResolvedCastTask PendingGatherTask;
         internal SpellCatalogEntry PendingGatherEntry;
         internal List<UnitEntityData> PendingGatherRecipients;
-        internal SpellCatalogEntry PendingVerificationEntry;
-        internal List<UnitEntityData> PendingVerificationRecipients;
-        internal float PendingVerificationElapsed;
-        internal float PendingVerificationNextCheck;
+        internal QueueExecutionReport Report;
         internal float CurrentCommandTime;
         internal float DelayRemaining;
         internal int CastCount;
