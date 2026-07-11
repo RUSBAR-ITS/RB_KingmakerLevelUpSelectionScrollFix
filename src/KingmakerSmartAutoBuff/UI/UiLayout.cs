@@ -21,5 +21,9 @@ namespace KingmakerSmartAutoBuff
         internal const float TargetColumnWidth = 230f;
         internal const float QueueTargetColumnWidth = 460f;
         internal const float TargetButtonWidth = 210f;
+        internal const float EditTargetButtonWidth = 180f;
+        internal const int EditGridColumns = 6;
+        internal const float EditCandidatesHeight = 72f;
+        internal const float EditTargetsHeight = 150f;
     }
 }

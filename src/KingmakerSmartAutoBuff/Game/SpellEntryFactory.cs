@@ -25,14 +25,16 @@ namespace KingmakerSmartAutoBuff
             entry.SpellbookId = SafeSpellbookId(spellbook);
             entry.SpellbookName = SafeSpellbookName(spellbook);
             entry.SpellBlueprintId = SafeBlueprintId(ability.Blueprint);
+            entry.SpellVariantId = entry.SpellBlueprintId;
             entry.SpellName = SafeAbilityName(ability);
             entry.Description = SafeAbilityDescription(ability);
             entry.SpellLevel = level;
             entry.MetamagicNames = GetMetamagicNames(ability);
             entry.MetamagicText = MetamagicLocalization.ListOrNone(entry.MetamagicNames);
-            entry.TargetKind = TargetResolver.DetermineTargetKind(ability);
+            entry.TargetProfile = TargetResolver.ReadTargetProfile(ability);
+            entry.TargetKind = entry.TargetProfile.TargetKind;
             entry.BuffProfile = AbilityBuffProfileReader.Read(ability);
-            entry.TargetSummary = AbilityBuffProfileReader.LocalizeDeliveryKind(entry.BuffProfile.DeliveryKind);
+            entry.TargetSummary = BuildTargetSummary(entry);
             entry.AvailableCasts = availableCasts;
             return entry;
         }
@@ -46,6 +48,19 @@ namespace KingmakerSmartAutoBuff
                 + entry.SpellLevel
                 + "|"
                 + string.Join(",", entry.MetamagicNames.ToArray());
+        }
+
+        private static string BuildTargetSummary(SpellCatalogEntry entry)
+        {
+            AbilityBuffProfile profile = entry.BuffProfile;
+            if (profile != null
+                && profile.IsFriendlyBuff
+                && (profile.IsAreaBuff || profile.DeliveryKind == BuffDeliveryKind.WholeParty))
+            {
+                return AbilityBuffProfileReader.LocalizeDeliveryKind(profile.DeliveryKind);
+            }
+
+            return TargetResolver.LocalizeTargetKind(entry.TargetKind);
         }
 
         internal static int SafeAvailableCastCount(Spellbook spellbook, AbilityData ability)

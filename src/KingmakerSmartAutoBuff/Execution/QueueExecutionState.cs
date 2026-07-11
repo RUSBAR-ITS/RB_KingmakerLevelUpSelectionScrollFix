@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using Kingmaker.EntitySystem.Entities;
 using Kingmaker.UnitLogic.Commands;
 
 namespace KingmakerSmartAutoBuff
@@ -16,7 +17,11 @@ namespace KingmakerSmartAutoBuff
         internal PartyGatherController CurrentGather;
         internal ResolvedCastTask PendingGatherTask;
         internal SpellCatalogEntry PendingGatherEntry;
-        internal List<Kingmaker.EntitySystem.Entities.UnitEntityData> PendingGatherRecipients;
+        internal List<UnitEntityData> PendingGatherRecipients;
+        internal SpellCatalogEntry PendingVerificationEntry;
+        internal List<UnitEntityData> PendingVerificationRecipients;
+        internal float PendingVerificationElapsed;
+        internal float PendingVerificationNextCheck;
         internal float CurrentCommandTime;
         internal float DelayRemaining;
         internal int CastCount;

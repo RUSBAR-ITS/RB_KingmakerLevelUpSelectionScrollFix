@@ -23,6 +23,7 @@ namespace KingmakerSmartAutoBuff
         internal string SpellbookId;
         internal string SpellbookName;
         internal string SpellBlueprintId;
+        internal string SpellVariantId;
         internal string SpellName;
         internal string Description;
         internal int SpellLevel;
@@ -30,6 +31,7 @@ namespace KingmakerSmartAutoBuff
         internal List<string> MetamagicNames = new List<string>();
         internal string TargetSummary;
         internal TargetKind TargetKind;
+        internal AbilityTargetProfile TargetProfile;
         internal AbilityBuffProfile BuffProfile;
         internal int AvailableCasts;
     }

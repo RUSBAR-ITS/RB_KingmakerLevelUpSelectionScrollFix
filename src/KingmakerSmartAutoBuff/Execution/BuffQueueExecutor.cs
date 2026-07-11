@@ -10,6 +10,10 @@ namespace KingmakerSmartAutoBuff
 {
     internal sealed class BuffQueueExecutor
     {
+        private const float InitialBuffVerificationDelay = 0.35f;
+        private const float BuffVerificationRetryDelay = 0.25f;
+        private const float BuffVerificationTimeout = 1.5f;
+
         private QueueExecutionState m_State;
 
         internal bool IsRunning
@@ -108,6 +112,12 @@ namespace KingmakerSmartAutoBuff
             if (m_State.CurrentCommand != null)
             {
                 UpdateCurrentCommand(deltaTime);
+                return;
+            }
+
+            if (m_State.PendingVerificationEntry != null)
+            {
+                UpdatePendingVerification(deltaTime);
                 return;
             }
 
@@ -365,7 +375,6 @@ namespace KingmakerSmartAutoBuff
                 if (command.Result == Kingmaker.UnitLogic.Commands.Base.UnitCommand.ResultType.Success)
                 {
                     m_State.CastCount++;
-                    VerifyCastResult(entry, expectedRecipients);
                     Logger.Info(
                         "Execution cast finished. caster="
                         + entry.CasterName
@@ -374,6 +383,7 @@ namespace KingmakerSmartAutoBuff
                         + ", recipients="
                         + QueueActionResolver.FormatUnitList(expectedRecipients)
                         + ".");
+                    ScheduleBuffVerification(entry, expectedRecipients);
                 }
                 else
                 {
@@ -386,9 +396,9 @@ namespace KingmakerSmartAutoBuff
                         + ", spell="
                         + entry.SpellName
                         + ".");
+                    ScheduleCastDelay();
                 }
 
-                m_State.DelayRemaining = Main.Settings != null ? Main.Settings.DelayBetweenCasts : 0.2f;
                 return;
             }
 
@@ -408,31 +418,96 @@ namespace KingmakerSmartAutoBuff
                 m_State.CurrentEntry = null;
                 m_State.CurrentExpectedRecipients = null;
                 m_State.CurrentCommandTime = 0f;
-                m_State.DelayRemaining = Main.Settings != null ? Main.Settings.DelayBetweenCasts : 0.2f;
+                ScheduleCastDelay();
             }
         }
 
-        private void VerifyCastResult(SpellCatalogEntry entry, List<UnitEntityData> expectedRecipients)
+        private void ScheduleBuffVerification(SpellCatalogEntry entry, List<UnitEntityData> expectedRecipients)
         {
             if (entry == null || expectedRecipients == null || expectedRecipients.Count == 0)
             {
+                ScheduleCastDelay();
                 return;
+            }
+
+            m_State.PendingVerificationEntry = entry;
+            m_State.PendingVerificationRecipients = new List<UnitEntityData>(expectedRecipients);
+            m_State.PendingVerificationElapsed = 0f;
+            m_State.PendingVerificationNextCheck = InitialBuffVerificationDelay;
+        }
+
+        private void UpdatePendingVerification(float deltaTime)
+        {
+            m_State.PendingVerificationElapsed += Math.Max(0f, deltaTime);
+            m_State.PendingVerificationNextCheck -= Math.Max(0f, deltaTime);
+            if (m_State.PendingVerificationNextCheck > 0f)
+            {
+                return;
+            }
+
+            SpellCatalogEntry entry = m_State.PendingVerificationEntry;
+            List<UnitEntityData> recipients = m_State.PendingVerificationRecipients;
+            bool finalAttempt = m_State.PendingVerificationElapsed >= BuffVerificationTimeout;
+            if (TryVerifyCastResult(entry, recipients, finalAttempt))
+            {
+                ClearPendingVerification();
+                ScheduleCastDelay();
+                return;
+            }
+
+            if (finalAttempt)
+            {
+                ClearPendingVerification();
+                ScheduleCastDelay();
+                return;
+            }
+
+            m_State.PendingVerificationNextCheck = BuffVerificationRetryDelay;
+        }
+
+        private bool TryVerifyCastResult(
+            SpellCatalogEntry entry,
+            List<UnitEntityData> expectedRecipients,
+            bool logMissingRecipients)
+        {
+            if (entry == null || expectedRecipients == null || expectedRecipients.Count == 0)
+            {
+                return true;
             }
 
             BuffApplicationResult result = BuffApplicationVerifier.VerifyRecipients(entry, entry.BuffProfile, expectedRecipients);
             if (result.Missing.Count > 0)
             {
-                Logger.Warning(
-                    "Buff verification missing recipients. spell="
-                    + entry.SpellName
-                    + ", missing="
-                    + QueueActionResolver.FormatUnitList(result.Missing)
-                    + ".");
+                if (logMissingRecipients)
+                {
+                    Logger.Warning(
+                        "Buff verification missing recipients. spell="
+                        + entry.SpellName
+                        + ", missing="
+                        + QueueActionResolver.FormatUnitList(result.Missing)
+                        + ", waited="
+                        + m_State.PendingVerificationElapsed.ToString("0.##")
+                        + "s.");
+                }
+
+                return false;
             }
-            else
-            {
-                Logger.Info("Buff verification ok. spell=" + entry.SpellName + ", covered=" + result.Covered.Count + ".");
-            }
+
+            Logger.Info("Buff verification ok. spell=" + entry.SpellName + ", covered=" + result.Covered.Count + ".");
+            return true;
+        }
+
+        private void ClearPendingVerification()
+        {
+            m_State.PendingVerificationEntry = null;
+            m_State.PendingVerificationRecipients = null;
+            m_State.PendingVerificationElapsed = 0f;
+            m_State.PendingVerificationNextCheck = 0f;
+        }
+
+        private void ScheduleCastDelay()
+        {
+            m_State.DelayRemaining = Main.Settings != null ? Main.Settings.DelayBetweenCasts : 0.2f;
         }
 
         private bool ResolveEntry(ResolvedCastTask task, out SpellCatalogEntry entry, out string reason)
@@ -678,11 +753,24 @@ namespace KingmakerSmartAutoBuff
                 return;
             }
 
+            AbilityTargetProfile target = entry.TargetProfile;
             Logger.Info(
                 "Spell profile. spell="
                 + entry.SpellName
                 + ", blueprint="
                 + entry.SpellBlueprintId
+                + ", targetKind="
+                + entry.TargetKind
+                + ", range="
+                + (target != null ? target.Range.ToString() : "<range>")
+                + ", canSelf="
+                + (target != null && target.CanTargetSelf)
+                + ", canFriends="
+                + (target != null && target.CanTargetFriends)
+                + ", canEnemies="
+                + (target != null && target.CanTargetEnemies)
+                + ", canPoint="
+                + (target != null && target.CanTargetPoint)
                 + ", delivery="
                 + profile.DeliveryKind
                 + ", friendly="

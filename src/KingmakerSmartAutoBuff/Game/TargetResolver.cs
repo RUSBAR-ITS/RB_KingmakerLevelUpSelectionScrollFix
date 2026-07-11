@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using Kingmaker.Blueprints;
 using Kingmaker.EntitySystem.Entities;
 using Kingmaker.UnitLogic.Abilities;
 using Kingmaker.UnitLogic.Abilities.Blueprints;
@@ -72,55 +73,92 @@ namespace KingmakerSmartAutoBuff
 
         internal static TargetKind DetermineTargetKind(AbilityData ability)
         {
+            return ReadTargetProfile(ability).TargetKind;
+        }
+
+        internal static AbilityTargetProfile ReadTargetProfile(AbilityData ability)
+        {
             BlueprintAbility blueprint = ability != null ? ability.Blueprint : null;
+            AbilityTargetProfile profile = new AbilityTargetProfile();
             if (blueprint == null)
             {
-                return TargetKind.Unknown;
+                return profile;
             }
 
-            AbilityRange range = blueprint.Range;
-            bool self = blueprint.CanTargetSelf;
-            bool friends = blueprint.CanTargetFriends;
-            bool enemies = blueprint.CanTargetEnemies;
-            bool point = blueprint.CanTargetPoint;
+            profile.Range = blueprint.Range;
+            profile.CanTargetSelf = blueprint.CanTargetSelf;
+            profile.CanTargetFriends = blueprint.CanTargetFriends;
+            profile.CanTargetEnemies = blueprint.CanTargetEnemies;
+            profile.CanTargetPoint = blueprint.CanTargetPoint;
+            profile.RadiusMeters = ReadRadiusMeters(blueprint);
+
+            bool self = profile.CanTargetSelf;
+            bool friends = profile.CanTargetFriends;
+            bool enemies = profile.CanTargetEnemies;
+            bool point = profile.CanTargetPoint;
             bool harmfulOnAlly = blueprint.EffectOnAlly == AbilityEffectOnUnit.Harmful;
 
-            if (range == AbilityRange.Personal)
+            if (profile.Range == AbilityRange.Personal)
             {
-                return TargetKind.Self;
+                profile.TargetKind = TargetKind.Self;
+                profile.IsFriendly = true;
+                return profile;
             }
 
             if (!self && !friends && !enemies && !point)
             {
-                return TargetKind.NoTarget;
+                profile.TargetKind = TargetKind.NoTarget;
+                return profile;
             }
 
             if (self && !friends && !enemies && !point)
             {
-                return TargetKind.Self;
+                profile.TargetKind = TargetKind.Self;
+                profile.IsFriendly = true;
+                return profile;
             }
 
             if (point)
             {
-                return DeterminePointTargetKind(blueprint);
+                profile.TargetKind = DeterminePointTargetKind(blueprint, profile.RadiusMeters, self, friends, enemies);
+                profile.IsPointTarget = profile.TargetKind == TargetKind.Point
+                    || profile.TargetKind == TargetKind.AreaAlly
+                    || profile.TargetKind == TargetKind.AreaEnemy
+                    || profile.TargetKind == TargetKind.AreaAny;
+                profile.IsAreaTarget = profile.TargetKind == TargetKind.AreaAlly
+                    || profile.TargetKind == TargetKind.AreaEnemy
+                    || profile.TargetKind == TargetKind.AreaAny;
+                profile.IsHostile = profile.TargetKind == TargetKind.AreaEnemy
+                    || (profile.TargetKind == TargetKind.AreaAny && !friends && enemies);
+                profile.IsFriendly = profile.TargetKind == TargetKind.AreaAlly
+                    || (profile.TargetKind == TargetKind.AreaAny && friends);
+                return profile;
             }
 
             if ((friends || self) && enemies)
             {
-                return TargetKind.SelectedAny;
+                profile.TargetKind = TargetKind.SelectedAny;
+                profile.IsFriendly = true;
+                profile.IsHostile = true;
+                return profile;
             }
 
             if (enemies)
             {
-                return TargetKind.SelectedEnemy;
+                profile.TargetKind = TargetKind.SelectedEnemy;
+                profile.IsHostile = true;
+                return profile;
             }
 
             if ((friends || self) && !harmfulOnAlly)
             {
-                return self && friends ? TargetKind.SelectedAllyOrSelf : TargetKind.SelectedAlly;
+                profile.TargetKind = self && friends ? TargetKind.SelectedAllyOrSelf : TargetKind.SelectedAlly;
+                profile.IsFriendly = true;
+                return profile;
             }
 
-            return TargetKind.Unsupported;
+            profile.TargetKind = TargetKind.Unsupported;
+            return profile;
         }
 
         internal static string LocalizeTargetKind(TargetKind targetKind)
@@ -154,8 +192,18 @@ namespace KingmakerSmartAutoBuff
             }
         }
 
-        private static TargetKind DeterminePointTargetKind(BlueprintAbility blueprint)
+        private static TargetKind DeterminePointTargetKind(
+            BlueprintAbility blueprint,
+            float radiusMeters,
+            bool self,
+            bool friends,
+            bool enemies)
         {
+            if (!self && !friends && !enemies && radiusMeters <= 0.01f)
+            {
+                return TargetKind.Point;
+            }
+
             try
             {
                 switch (blueprint.AoETargets)
@@ -174,6 +222,60 @@ namespace KingmakerSmartAutoBuff
             {
                 return TargetKind.Point;
             }
+        }
+
+        private static float ReadRadiusMeters(BlueprintAbility blueprint)
+        {
+            float radius = 0f;
+            try
+            {
+                radius = blueprint.AoERadius.Meters;
+            }
+            catch
+            {
+                radius = 0f;
+            }
+
+            BlueprintComponent[] components;
+            try
+            {
+                components = blueprint.ComponentsArray ?? new BlueprintComponent[0];
+            }
+            catch
+            {
+                return radius;
+            }
+
+            foreach (BlueprintComponent component in components)
+            {
+                AbilityTargetsAround targetsAround = component as AbilityTargetsAround;
+                if (targetsAround != null)
+                {
+                    try
+                    {
+                        radius = System.Math.Max(radius, targetsAround.AoERadius.Meters);
+                    }
+                    catch
+                    {
+                    }
+
+                    continue;
+                }
+
+                AbilityAoERadius aoeRadius = component as AbilityAoERadius;
+                if (aoeRadius != null)
+                {
+                    try
+                    {
+                        radius = System.Math.Max(radius, aoeRadius.AoERadius.Meters);
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+
+            return radius;
         }
 
         private static bool IsAreaTarget(TargetKind targetKind)

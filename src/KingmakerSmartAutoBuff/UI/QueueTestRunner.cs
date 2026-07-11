@@ -17,12 +17,13 @@ namespace KingmakerSmartAutoBuff
 
             foreach (BuffQueueAction action in file.Queue.Actions)
             {
-                SpellCatalogEntry currentEntry = SpellCatalog.FindCurrentEntry(action);
+                QueueActionAvailability availability = QueueActionAvailabilityEvaluator.Evaluate(action);
+                SpellCatalogEntry currentEntry = availability.BestEntry;
                 if (currentEntry == null)
                 {
                     Logger.Info(
                         "Would skip: spell is no longer available. caster="
-                        + action.CasterName
+                        + QueueActionAvailabilityEvaluator.FormatCandidateNames(availability.UnavailableCasters)
                         + ", spell="
                         + action.SpellName
                         + ", metamagic="
@@ -36,7 +37,7 @@ namespace KingmakerSmartAutoBuff
                 {
                     Logger.Info(
                         "Would skip: no selected recipient is currently available. caster="
-                        + action.CasterName
+                        + currentEntry.CasterName
                         + ", spell="
                         + action.SpellName
                         + ".");
@@ -46,6 +47,8 @@ namespace KingmakerSmartAutoBuff
                 Logger.Info(
                     "Would cast: caster="
                     + currentEntry.CasterName
+                    + ", candidates="
+                    + QueueActionAvailabilityEvaluator.FormatCandidateNames(availability.AvailableCasters)
                     + ", spell="
                     + currentEntry.SpellName
                     + ", metamagic="

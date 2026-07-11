@@ -155,6 +155,38 @@ namespace KingmakerSmartAutoBuff
                     action.Metamagic = new List<string>();
                 }
 
+                if (action.CandidateCasters == null)
+                {
+                    action.CandidateCasters = new List<QueueCasterReference>();
+                }
+
+                if (action.CandidateCasters.Count == 0 && !string.IsNullOrEmpty(action.CasterId))
+                {
+                    action.CandidateCasters.Add(new QueueCasterReference
+                    {
+                        CasterId = action.CasterId,
+                        CasterName = action.CasterName,
+                        SpellbookId = action.SpellbookId,
+                        SpellbookName = action.SpellbookName
+                    });
+                }
+
+                if (action.CastTargetIds == null)
+                {
+                    action.CastTargetIds = new List<string>();
+                }
+
+                if (action.CastTargetNames == null)
+                {
+                    action.CastTargetNames = new List<string>();
+                }
+
+                if (action.CastTargetIds.Count == 0 && !string.IsNullOrEmpty(action.CastTargetId))
+                {
+                    action.CastTargetIds.Add(action.CastTargetId);
+                    action.CastTargetNames.Add(action.CastTargetName);
+                }
+
                 if (action.RecipientIds == null)
                 {
                     action.RecipientIds = new List<string>();

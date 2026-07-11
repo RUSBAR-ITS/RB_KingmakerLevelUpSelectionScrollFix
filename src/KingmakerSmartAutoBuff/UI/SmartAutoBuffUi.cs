@@ -158,6 +158,7 @@ namespace KingmakerSmartAutoBuff
             }
 
             int added = 0;
+            int selectedActionIndex = -1;
             if (IsRecipientSelectionMode(entry))
             {
                 BuffQueueAction action = CreateBaseAction(entry);
@@ -170,7 +171,7 @@ namespace KingmakerSmartAutoBuff
                     action.RecipientNames.Add(target.Name);
                 }
 
-                file.Queue.Actions.Add(action);
+                selectedActionIndex = AddOrMergeAction(file.Queue, action);
                 added++;
             }
             else if (entry.BuffProfile != null && entry.BuffProfile.DeliveryKind == BuffDeliveryKind.Personal)
@@ -180,7 +181,9 @@ namespace KingmakerSmartAutoBuff
                 action.CastTargetName = entry.CasterName;
                 action.RecipientIds.Add(entry.CasterId);
                 action.RecipientNames.Add(entry.CasterName);
-                file.Queue.Actions.Add(action);
+                action.CastTargetIds.Add(entry.CasterId);
+                action.CastTargetNames.Add(entry.CasterName);
+                selectedActionIndex = AddOrMergeAction(file.Queue, action);
                 added++;
             }
             else if (entry.TargetKind == TargetKind.NoTarget)
@@ -188,20 +191,30 @@ namespace KingmakerSmartAutoBuff
                 BuffQueueAction action = CreateBaseAction(entry);
                 action.CastTargetId = entry.CasterId;
                 action.CastTargetName = entry.CasterName;
-                file.Queue.Actions.Add(action);
+                selectedActionIndex = AddOrMergeAction(file.Queue, action);
                 added++;
             }
             else
             {
+                BuffQueueAction action = CreateBaseAction(entry);
                 foreach (TargetOption target in SelectedTargetsForEntry(entry))
                 {
-                    BuffQueueAction action = CreateBaseAction(entry);
-                    action.CastTargetId = target.Id;
-                    action.CastTargetName = target.Name;
+                    if (string.IsNullOrEmpty(action.CastTargetId))
+                    {
+                        action.CastTargetId = target.Id;
+                        action.CastTargetName = target.Name;
+                    }
+
+                    action.CastTargetIds.Add(target.Id);
+                    action.CastTargetNames.Add(target.Name);
                     action.RecipientIds.Add(target.Id);
                     action.RecipientNames.Add(target.Name);
-                    file.Queue.Actions.Add(action);
                     added++;
+                }
+
+                if (added > 0)
+                {
+                    selectedActionIndex = AddOrMergeAction(file.Queue, action);
                 }
             }
 
@@ -210,7 +223,7 @@ namespace KingmakerSmartAutoBuff
                 return;
             }
 
-            State.SelectedActionIndex = file.Queue.Actions.Count - 1;
+            State.SelectedActionIndex = selectedActionIndex >= 0 ? selectedActionIndex : file.Queue.Actions.Count - 1;
             QueueRepository.Save(file);
             State.Status = ModLocalization.T("Status.ActionAdded");
         }
@@ -341,11 +354,225 @@ namespace KingmakerSmartAutoBuff
             action.SpellbookId = entry.SpellbookId;
             action.SpellbookName = entry.SpellbookName;
             action.SpellBlueprintId = entry.SpellBlueprintId;
+            action.SpellVariantId = entry.SpellVariantId;
             action.SpellLevel = entry.SpellLevel;
             action.SpellName = entry.SpellName;
             action.Metamagic = new List<string>(entry.MetamagicNames);
+            action.TargetKind = entry.TargetKind;
             action.DeliveryKind = entry.BuffProfile != null ? entry.BuffProfile.DeliveryKind : BuffDeliveryKind.Unknown;
+            action.CandidateCasters.Add(new QueueCasterReference
+            {
+                CasterId = entry.CasterId,
+                CasterName = entry.CasterName,
+                SpellbookId = entry.SpellbookId,
+                SpellbookName = entry.SpellbookName
+            });
             return action;
+        }
+
+        private static int AddOrMergeAction(BuffQueueDefinition queue, BuffQueueAction action)
+        {
+            if (queue == null || action == null)
+            {
+                return -1;
+            }
+
+            int index = FindMergeIndex(queue, action);
+            if (index < 0)
+            {
+                queue.Actions.Add(action);
+                return queue.Actions.Count - 1;
+            }
+
+            BuffQueueAction existing = queue.Actions[index];
+            MergeCandidates(existing, action);
+            MergePairs(existing.CastTargetIds, existing.CastTargetNames, action.CastTargetIds, action.CastTargetNames);
+            MergePairs(existing.RecipientIds, existing.RecipientNames, action.RecipientIds, action.RecipientNames);
+            if (string.IsNullOrEmpty(existing.CastTargetId) && !string.IsNullOrEmpty(action.CastTargetId))
+            {
+                existing.CastTargetId = action.CastTargetId;
+                existing.CastTargetName = action.CastTargetName;
+            }
+
+            return index;
+        }
+
+        private static int FindMergeIndex(BuffQueueDefinition queue, BuffQueueAction action)
+        {
+            for (int i = 0; i < queue.Actions.Count; i++)
+            {
+                if (CanMerge(queue.Actions[i], action))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        private static bool CanMerge(BuffQueueAction left, BuffQueueAction right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            if (!SameSpellKey(left, right))
+            {
+                return false;
+            }
+
+            if (IsSelfAction(left) || IsSelfAction(right))
+            {
+                QueueCasterReference leftCaster = FirstCandidate(left);
+                QueueCasterReference rightCaster = FirstCandidate(right);
+                return SameCaster(leftCaster, rightCaster);
+            }
+
+            return true;
+        }
+
+        private static bool SameSpellKey(BuffQueueAction left, BuffQueueAction right)
+        {
+            return string.Equals(left.SpellBlueprintId, right.SpellBlueprintId, StringComparison.Ordinal)
+                && string.Equals(left.SpellVariantId ?? string.Empty, right.SpellVariantId ?? string.Empty, StringComparison.Ordinal)
+                && left.SpellLevel == right.SpellLevel
+                && left.TargetKind == right.TargetKind
+                && left.DeliveryKind == right.DeliveryKind
+                && SameMetamagic(left.Metamagic, right.Metamagic);
+        }
+
+        private static bool SameMetamagic(List<string> left, List<string> right)
+        {
+            left = left ?? new List<string>();
+            right = right ?? new List<string>();
+            if (left.Count != right.Count)
+            {
+                return false;
+            }
+
+            foreach (string value in left)
+            {
+                if (!right.Contains(value))
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static void MergeCandidates(BuffQueueAction target, BuffQueueAction source)
+        {
+            if (target.CandidateCasters == null)
+            {
+                target.CandidateCasters = new List<QueueCasterReference>();
+            }
+
+            if (source.CandidateCasters == null)
+            {
+                return;
+            }
+
+            foreach (QueueCasterReference candidate in source.CandidateCasters)
+            {
+                bool exists = false;
+                foreach (QueueCasterReference current in target.CandidateCasters)
+                {
+                    if (SameCaster(current, candidate))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                {
+                    target.CandidateCasters.Add(candidate);
+                }
+            }
+        }
+
+        private static void MergePairs(List<string> targetIds, List<string> targetNames, List<string> sourceIds, List<string> sourceNames)
+        {
+            if (sourceIds == null)
+            {
+                return;
+            }
+
+            for (int i = 0; i < sourceIds.Count; i++)
+            {
+                string id = sourceIds[i];
+                string name = sourceNames != null && i < sourceNames.Count ? sourceNames[i] : string.Empty;
+                if (string.IsNullOrEmpty(id) && string.IsNullOrEmpty(name))
+                {
+                    continue;
+                }
+
+                bool exists = false;
+                for (int j = 0; j < targetIds.Count; j++)
+                {
+                    if (string.Equals(targetIds[j], id, StringComparison.Ordinal)
+                        || (!string.IsNullOrEmpty(name) && j < targetNames.Count && string.Equals(targetNames[j], name, StringComparison.Ordinal)))
+                    {
+                        exists = true;
+                        break;
+                    }
+                }
+
+                if (!exists)
+                {
+                    targetIds.Add(id);
+                    targetNames.Add(name);
+                }
+            }
+        }
+
+        private static bool SameCaster(QueueCasterReference left, QueueCasterReference right)
+        {
+            if (left == null || right == null)
+            {
+                return false;
+            }
+
+            bool sameCaster = string.Equals(left.CasterId, right.CasterId, StringComparison.Ordinal)
+                || (!string.IsNullOrEmpty(left.CasterName)
+                    && string.Equals(left.CasterName, right.CasterName, StringComparison.Ordinal));
+            if (!sameCaster)
+            {
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(left.SpellbookId) && !string.IsNullOrEmpty(right.SpellbookId))
+            {
+                return string.Equals(left.SpellbookId, right.SpellbookId, StringComparison.Ordinal);
+            }
+
+            return true;
+        }
+
+        private static QueueCasterReference FirstCandidate(BuffQueueAction action)
+        {
+            if (action != null && action.CandidateCasters != null && action.CandidateCasters.Count > 0)
+            {
+                return action.CandidateCasters[0];
+            }
+
+            return action != null
+                ? new QueueCasterReference
+                {
+                    CasterId = action.CasterId,
+                    CasterName = action.CasterName,
+                    SpellbookId = action.SpellbookId,
+                    SpellbookName = action.SpellbookName
+                }
+                : null;
+        }
+
+        private static bool IsSelfAction(BuffQueueAction action)
+        {
+            return action != null
+                && (action.TargetKind == TargetKind.Self || action.DeliveryKind == BuffDeliveryKind.Personal);
         }
 
         private static bool IsRecipientSelectionMode(SpellCatalogEntry entry)

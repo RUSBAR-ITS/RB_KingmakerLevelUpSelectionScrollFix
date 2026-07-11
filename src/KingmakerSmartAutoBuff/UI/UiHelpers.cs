@@ -42,5 +42,21 @@ namespace KingmakerSmartAutoBuff
 
             return string.Join(", ", values.ToArray());
         }
+
+        internal static void ColoredLabel(string text, Color color, params GUILayoutOption[] options)
+        {
+            Color oldColor = GUI.color;
+            GUI.color = color;
+            GUILayout.Label(text ?? string.Empty, options);
+            GUI.color = oldColor;
+        }
+
+        internal static void ColoredWrappedLabel(string text, Color color, params GUILayoutOption[] options)
+        {
+            Color oldColor = GUI.color;
+            GUI.color = color;
+            GUILayout.Label(text ?? string.Empty, WrappedLabel, options);
+            GUI.color = oldColor;
+        }
     }
 }

@@ -15,12 +15,16 @@ namespace KingmakerSmartAutoBuff
         internal Vector2 SpellScroll;
         internal Vector2 QueueScroll;
         internal Vector2 DescriptionScroll;
+        internal Vector2 EditScroll;
+        internal Vector2 EditTargetsScroll;
 
         internal int SelectedQueueIndex;
         internal int SelectedCasterIndex;
         internal int SelectedSpellIndex = -1;
         internal int SelectedActionIndex = -1;
+        internal int EditingActionIndex = -1;
         internal int LevelFilter = -1;
+        internal BuffQueueAction EditingActionDraft;
 
         internal string NewQueueName = "Daily buffs";
         internal string RenameQueueText = string.Empty;

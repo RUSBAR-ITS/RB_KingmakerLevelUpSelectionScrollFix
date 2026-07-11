@@ -30,6 +30,16 @@ namespace KingmakerSmartAutoBuff
             return SpellQueueResolver.FindCurrentEntry(action);
         }
 
+        internal static List<SpellCatalogEntry> FindCurrentEntries(BuffQueueAction action)
+        {
+            return SpellQueueResolver.FindCurrentEntries(action);
+        }
+
+        internal static List<CasterCandidate> FindCandidateEntries(BuffQueueAction action)
+        {
+            return SpellQueueResolver.FindCandidateEntries(action);
+        }
+
         internal static UnitEntityData FindPartyUnit(string id, string name)
         {
             return PartyProvider.FindPartyUnit(id, name);
