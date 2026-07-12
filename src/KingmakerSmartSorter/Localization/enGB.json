@@ -1,0 +1,17 @@
+{
+  "Settings.Title": "Kingmaker Smart Sorter",
+  "Settings.Language": "Language",
+  "Settings.Language.Russian": "Russian",
+  "Settings.Language.English": "English",
+  "Settings.EnablePatch": "Enable mod (requires a mod reload if changed)",
+  "Settings.MenuHint": "Select Detailed sorting in the inventory sorting menu. Version 0.2.0 applies detailed rules to weapons, shields, and armor; other items use the game's type and name order.",
+  "Settings.ActiveMode": "Detailed sorting selected",
+  "Settings.Diagnostics": "Diagnostics",
+  "Settings.LogDiagnostics": "Write sorting keys to the log",
+  "Settings.MaxDiagnosticSortRuns": "Maximum diagnostic sort runs",
+  "Settings.MaxDiagnosticItemsPerRun": "Maximum items per report",
+  "Settings.ActiveValue": "active",
+  "Common.Yes": "Yes",
+  "Common.No": "No",
+  "SortMenu.Smart": "Detailed sorting"
+}
