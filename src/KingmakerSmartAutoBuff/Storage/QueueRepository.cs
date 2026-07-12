@@ -1,23 +1,19 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Newtonsoft.Json;
+using System.Text;
 
 namespace KingmakerSmartAutoBuff
 {
     internal sealed class QueueRepository
     {
         private readonly string m_QueuesPath;
-        private readonly JsonSerializerSettings m_JsonSettings;
+        private readonly QueueJsonSerializer m_JsonSerializer;
 
         internal QueueRepository(string modPath)
         {
             m_QueuesPath = Path.Combine(modPath ?? string.Empty, "Queues");
-            m_JsonSettings = new JsonSerializerSettings
-            {
-                Formatting = Formatting.Indented,
-                NullValueHandling = NullValueHandling.Ignore
-            };
+            m_JsonSerializer = new QueueJsonSerializer();
         }
 
         internal List<QueueFile> Queues { get; } = new List<QueueFile>();
@@ -27,21 +23,39 @@ namespace KingmakerSmartAutoBuff
             Queues.Clear();
             Directory.CreateDirectory(m_QueuesPath);
 
-            foreach (string path in Directory.GetFiles(m_QueuesPath, "*.json"))
+            string[] paths = Directory.GetFiles(m_QueuesPath, "*.json");
+            Array.Sort(paths, StringComparer.OrdinalIgnoreCase);
+            foreach (string path in paths)
             {
                 try
                 {
-                    BuffQueueDefinition queue = JsonConvert.DeserializeObject<BuffQueueDefinition>(
-                        File.ReadAllText(path),
-                        m_JsonSettings);
+                    bool containsName;
+                    bool containsActions;
+                    BuffQueueDefinition queue = m_JsonSerializer.Deserialize(
+                        File.ReadAllText(path, Encoding.UTF8),
+                        out containsName,
+                        out containsActions);
 
                     if (queue == null)
                     {
                         continue;
                     }
 
+                    if (!containsName || string.IsNullOrWhiteSpace(queue.Name))
+                    {
+                        queue.Name = Path.GetFileNameWithoutExtension(path);
+                        Logger.Warning("Recovered queue name from file name: " + queue.Name + ".");
+                    }
+
+                    if (!containsActions)
+                    {
+                        queue.Actions = new List<BuffQueueAction>();
+                        Logger.Warning("Queue file contains no actions field and was recovered as empty: " + path + ".");
+                    }
+
                     Normalize(queue);
                     Queues.Add(new QueueFile(path, queue));
+                    Logger.Info("Loaded queue. name=" + queue.Name + ", actions=" + queue.Actions.Count + ".");
                 }
                 catch (Exception ex)
                 {
@@ -117,7 +131,9 @@ namespace KingmakerSmartAutoBuff
             {
                 Directory.CreateDirectory(m_QueuesPath);
                 Normalize(file.Queue);
-                File.WriteAllText(file.Path, JsonConvert.SerializeObject(file.Queue, m_JsonSettings));
+                string json = m_JsonSerializer.Serialize(file.Queue);
+                WriteSafely(file.Path, json);
+                Logger.Info("Saved queue. name=" + file.Queue.Name + ", actions=" + file.Queue.Actions.Count + ".");
             }
             catch (Exception ex)
             {
@@ -227,6 +243,41 @@ namespace KingmakerSmartAutoBuff
             }
 
             return value.Trim();
+        }
+
+        private static void WriteSafely(string path, string content)
+        {
+            string temporaryPath = path + ".tmp";
+            string backupPath = path + ".bak";
+            File.WriteAllText(temporaryPath, content, new UTF8Encoding(false));
+
+            if (!File.Exists(path))
+            {
+                File.Move(temporaryPath, path);
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(backupPath))
+                {
+                    File.Delete(backupPath);
+                }
+
+                File.Replace(temporaryPath, path, backupPath, true);
+            }
+            catch (PlatformNotSupportedException)
+            {
+                File.Copy(path, backupPath, true);
+                File.Copy(temporaryPath, path, true);
+                File.Delete(temporaryPath);
+            }
+            catch (IOException)
+            {
+                File.Copy(path, backupPath, true);
+                File.Copy(temporaryPath, path, true);
+                File.Delete(temporaryPath);
+            }
         }
     }
 }
