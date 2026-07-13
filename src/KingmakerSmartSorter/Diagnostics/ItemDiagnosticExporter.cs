@@ -18,7 +18,7 @@ namespace KingmakerSmartSorter
     internal static class ItemDiagnosticExporter
     {
         private const string DiagnosticsDirectoryName = "Diagnostics";
-        private const int SchemaVersion = 2;
+        private const int SchemaVersion = 3;
 
         internal static ItemDiagnosticExportResult Export(
             string modPath,
@@ -73,6 +73,10 @@ namespace KingmakerSmartSorter
                     + graph.TotalNodeCount
                     + ", expandedComponents="
                     + graph.ExpandedComponentCount
+                    + ", expandedElements="
+                    + graph.ExpandedElementCount
+                    + ", shallowBlueprintReferences="
+                    + graph.ShallowBlueprintReferenceCount
                     + ", potentiallyMechanicalTerminals="
                     + graph.PotentialMechanicalTerminalCount
                     + ", truncations="
@@ -425,6 +429,9 @@ namespace KingmakerSmartSorter
                     ["BlueprintCount"] = blueprintGraph.Count,
                     ["GraphNodeCount"] = graph.TotalNodeCount,
                     ["ExpandedBlueprintComponentCount"] = graph.ExpandedComponentCount,
+                    ["ExpandedElementCount"] = graph.ExpandedElementCount,
+                    ["ShallowBlueprintReferenceCount"] =
+                        graph.ShallowBlueprintReferenceCount,
                     ["PotentiallyMechanicalTerminalCount"] =
                         graph.PotentialMechanicalTerminalCount,
                     ["TruncationCount"] = graph.TruncationCount,

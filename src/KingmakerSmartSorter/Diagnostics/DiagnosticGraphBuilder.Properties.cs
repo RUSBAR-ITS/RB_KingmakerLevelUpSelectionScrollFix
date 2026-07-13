@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Kingmaker.Blueprints;
+using Kingmaker.ElementsSystem;
+using Kingmaker.Localization;
 using Newtonsoft.Json.Linq;
 
 namespace KingmakerSmartSorter
@@ -78,7 +81,9 @@ namespace KingmakerSmartSorter
                     || property.PropertyType == typeof(IntPtr)
                     || property.PropertyType == typeof(UIntPtr)
                     || typeof(Delegate).IsAssignableFrom(property.PropertyType)
-                    || !declaringType.StartsWith("Kingmaker.", StringComparison.Ordinal))
+                    || !declaringType.StartsWith("Kingmaker.", StringComparison.Ordinal)
+                    || IsRuntimeOnlyProperty(property)
+                    || !IsSupportedPropertyType(property.PropertyType))
                 {
                     continue;
                 }
@@ -99,6 +104,28 @@ namespace KingmakerSmartSorter
             cached = result.ToArray();
             s_PropertyCache[type] = cached;
             return cached;
+        }
+
+        private static bool IsRuntimeOnlyProperty(PropertyInfo property)
+        {
+            string name = property == null ? string.Empty : property.Name;
+            return string.Equals(name, "Context", StringComparison.Ordinal)
+                || string.Equals(name, "Fact", StringComparison.Ordinal)
+                || string.Equals(name, "Owner", StringComparison.Ordinal)
+                || string.Equals(name, "IsListeningEvents", StringComparison.Ordinal)
+                || string.Equals(name, "IsReapplying", StringComparison.Ordinal)
+                || string.Equals(name, "IsAvailable", StringComparison.Ordinal);
+        }
+
+        private static bool IsSupportedPropertyType(Type type)
+        {
+            return IsScalar(type)
+                || type.IsEnum
+                || type.IsValueType
+                || type == typeof(LocalizedString)
+                || typeof(BlueprintScriptableObject).IsAssignableFrom(type)
+                || typeof(BlueprintComponent).IsAssignableFrom(type)
+                || typeof(Element).IsAssignableFrom(type);
         }
     }
 }

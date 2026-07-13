@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
 using Kingmaker.Blueprints;
+using Kingmaker.ElementsSystem;
 using Kingmaker.Items;
 using Kingmaker.Localization;
 using Newtonsoft.Json.Linq;
@@ -67,6 +68,18 @@ namespace KingmakerSmartSorter
             if (!ReferenceEquals(component, null))
             {
                 return SerializeBlueprintComponent(component, path, depth + 1);
+            }
+
+            Element element = value as Element;
+            if (!ReferenceEquals(element, null))
+            {
+                return SerializeElement(element, path, depth + 1);
+            }
+
+            SharedStringAsset localizedAsset = value as SharedStringAsset;
+            if (!ReferenceEquals(localizedAsset, null))
+            {
+                return SerializeLocalizedAsset(localizedAsset, path, depth + 1);
             }
 
             UnityEngine.Object unityObject = value as UnityEngine.Object;

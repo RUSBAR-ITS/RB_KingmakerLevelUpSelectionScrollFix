@@ -1,6 +1,8 @@
 using System;
 using System.Reflection;
 using Kingmaker.Blueprints;
+using Kingmaker.ElementsSystem;
+using Kingmaker.Localization;
 using Newtonsoft.Json.Linq;
 
 namespace KingmakerSmartSorter
@@ -33,7 +35,7 @@ namespace KingmakerSmartSorter
                 ["Type"] = type.FullName,
                 ["ShortType"] = type.Name,
                 ["Name"] = SafeUnityName(component),
-                ["SourcePath"] = path ?? string.Empty,
+                ["SourcePath"] = CompactDiagnosticPath(path),
                 ["Fields"] = SerializeFields(component, path + "/fields", depth),
                 ["Properties"] = SerializeProperties(
                     component,
@@ -57,7 +59,74 @@ namespace KingmakerSmartSorter
                 ["Name"] = SafeUnityName(value),
                 ["Category"] = GetUnityObjectCategory(type),
                 ["PotentiallyMechanical"] = potentiallyMechanical,
-                ["SourcePath"] = path ?? string.Empty
+                ["SourcePath"] = CompactDiagnosticPath(path)
+            };
+        }
+
+        private JToken SerializeElement(Element element, string path, int depth)
+        {
+            string id;
+            JToken existingReference;
+            if (!TryBeginReference(
+                element,
+                path,
+                "element",
+                out id,
+                out existingReference))
+            {
+                return existingReference;
+            }
+
+            Type type = element.GetType();
+            TrackExpandedElement(type);
+            return new JObject
+            {
+                ["$id"] = id,
+                ["Kind"] = "Element",
+                ["Type"] = type.FullName,
+                ["ShortType"] = type.Name,
+                ["Name"] = SafeUnityName(element),
+                ["SourcePath"] = CompactDiagnosticPath(path),
+                ["Fields"] = SerializeFields(element, path + "/fields", depth),
+                ["Properties"] = SerializeProperties(
+                    element,
+                    path + "/properties",
+                    depth)
+            };
+        }
+
+        private JToken SerializeLocalizedAsset(
+            SharedStringAsset asset,
+            string path,
+            int depth)
+        {
+            string id;
+            JToken existingReference;
+            if (!TryBeginReference(
+                asset,
+                path,
+                "localized-asset",
+                out id,
+                out existingReference))
+            {
+                return existingReference;
+            }
+
+            Type type = asset.GetType();
+            TrackExpandedLocalizedAsset();
+            return new JObject
+            {
+                ["$id"] = id,
+                ["Kind"] = "LocalizedAsset",
+                ["Type"] = type.FullName,
+                ["ShortType"] = type.Name,
+                ["Name"] = SafeUnityName(asset),
+                ["SourcePath"] = CompactDiagnosticPath(path),
+                ["Fields"] = SerializeFields(asset, path + "/fields", depth),
+                ["Properties"] = SerializeProperties(
+                    asset,
+                    path + "/properties",
+                    depth)
             };
         }
 
@@ -79,6 +148,25 @@ namespace KingmakerSmartSorter
                 return true;
             }
 
+            if (field.Name.StartsWith("m_Cached", StringComparison.Ordinal)
+                || string.Equals(
+                    field.Name,
+                    "m_EnchantmentsCollected",
+                    StringComparison.Ordinal))
+            {
+                reason = "DerivedRuntimeCache";
+                return true;
+            }
+
+            if (field.Name.StartsWith("<Fact>", StringComparison.Ordinal)
+                || field.Name.StartsWith("<Owner>", StringComparison.Ordinal)
+                || field.Name.StartsWith("<IsListeningEvents>", StringComparison.Ordinal)
+                || string.Equals(field.Name, "m_Modifier", StringComparison.Ordinal))
+            {
+                reason = "RuntimeComponentState";
+                return true;
+            }
+
             return false;
         }
 
@@ -94,6 +182,9 @@ namespace KingmakerSmartSorter
                 && !fullName.StartsWith("Kingmaker.View.", StringComparison.Ordinal)
                 && !fullName.StartsWith("Kingmaker.UI.", StringComparison.Ordinal)
                 && !fullName.StartsWith("Kingmaker.ResourceLinks.", StringComparison.Ordinal)
+                && !fullName.StartsWith(
+                    "Kingmaker.AreaLogic.Cutscenes.Commands.",
+                    StringComparison.Ordinal)
                 && fullName.IndexOf("Sound", StringComparison.OrdinalIgnoreCase) < 0
                 && fullName.IndexOf("EquipmentEntity", StringComparison.OrdinalIgnoreCase) < 0;
         }

@@ -9,6 +9,12 @@ namespace KingmakerSmartSorter
     {
         private readonly Dictionary<string, int> m_ExpandedComponentTypes =
             new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> m_ExpandedElementTypes =
+            new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> m_ShallowBlueprintTypes =
+            new Dictionary<string, int>(StringComparer.Ordinal);
+        private readonly Dictionary<string, int> m_ShallowBlueprintReasons =
+            new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> m_TerminalUnityTypes =
             new Dictionary<string, int>(StringComparer.Ordinal);
         private readonly Dictionary<string, int> m_PotentialMechanicalTerminalTypes =
@@ -21,8 +27,12 @@ namespace KingmakerSmartSorter
             new Dictionary<string, EnumCoverageEntry>(StringComparer.Ordinal);
 
         private int m_BlueprintReferenceCount;
+        private int m_DeepBlueprintReferenceCount;
+        private int m_ShallowBlueprintReferenceCount;
         private int m_ObjectReferenceCount;
         private int m_ExpandedComponentCount;
+        private int m_ExpandedElementCount;
+        private int m_ExpandedLocalizedAssetCount;
         private int m_TerminalUnityObjectCount;
         private int m_PotentialMechanicalTerminalCount;
         private int m_IgnoredFieldCount;
@@ -44,6 +54,16 @@ namespace KingmakerSmartSorter
             get { return m_PotentialMechanicalTerminalCount; }
         }
 
+        internal int ExpandedElementCount
+        {
+            get { return m_ExpandedElementCount; }
+        }
+
+        internal int ShallowBlueprintReferenceCount
+        {
+            get { return m_ShallowBlueprintReferenceCount; }
+        }
+
         internal int TruncationCount
         {
             get
@@ -63,11 +83,24 @@ namespace KingmakerSmartSorter
             return new JObject
             {
                 ["BlueprintReferences"] = m_BlueprintReferenceCount,
+                ["DeepBlueprintReferences"] = m_DeepBlueprintReferenceCount,
+                ["ShallowBlueprintReferences"] = m_ShallowBlueprintReferenceCount,
+                ["ShallowBlueprintReferenceTypes"] = BuildCountArray(
+                    m_ShallowBlueprintTypes,
+                    "Type"),
+                ["ShallowBlueprintReferenceReasons"] = BuildCountArray(
+                    m_ShallowBlueprintReasons,
+                    "Reason"),
                 ["ObjectReferences"] = m_ObjectReferenceCount,
                 ["ExpandedBlueprintComponents"] = m_ExpandedComponentCount,
                 ["ExpandedBlueprintComponentTypes"] = BuildCountArray(
                     m_ExpandedComponentTypes,
                     "Type"),
+                ["ExpandedElements"] = m_ExpandedElementCount,
+                ["ExpandedElementTypes"] = BuildCountArray(
+                    m_ExpandedElementTypes,
+                    "Type"),
+                ["ExpandedLocalizedAssets"] = m_ExpandedLocalizedAssetCount,
                 ["TerminalUnityObjects"] = m_TerminalUnityObjectCount,
                 ["TerminalUnityObjectTypes"] = BuildCountArray(
                     m_TerminalUnityTypes,
@@ -98,7 +131,7 @@ namespace KingmakerSmartSorter
                 ["ErrorCount"] = m_Errors.Count,
                 ["SuppressedErrorsAfterLimit"] = m_SuppressedErrorCount,
                 ["CompletenessRule"] =
-                    "PotentiallyMechanicalTerminalUnityObjects and Truncations should both be zero before semantic tables are generated."
+                    "PotentiallyMechanicalTerminalUnityObjects and Truncations should both be zero. Shallow blueprint references are intentional boundaries and remain fully identified by GUID, type and localized summary."
             };
         }
 
@@ -151,9 +184,21 @@ namespace KingmakerSmartSorter
             return result;
         }
 
-        private void TrackBlueprintReference()
+        private void TrackBlueprintReference(
+            Type type,
+            bool expanded,
+            string shallowReason)
         {
             m_BlueprintReferenceCount++;
+            if (expanded)
+            {
+                m_DeepBlueprintReferenceCount++;
+                return;
+            }
+
+            m_ShallowBlueprintReferenceCount++;
+            Increment(m_ShallowBlueprintTypes, SafeTypeName(type));
+            Increment(m_ShallowBlueprintReasons, shallowReason ?? string.Empty);
         }
 
         private void TrackObjectReference()
@@ -165,6 +210,17 @@ namespace KingmakerSmartSorter
         {
             m_ExpandedComponentCount++;
             Increment(m_ExpandedComponentTypes, SafeTypeName(type));
+        }
+
+        private void TrackExpandedElement(Type type)
+        {
+            m_ExpandedElementCount++;
+            Increment(m_ExpandedElementTypes, SafeTypeName(type));
+        }
+
+        private void TrackExpandedLocalizedAsset()
+        {
+            m_ExpandedLocalizedAssetCount++;
         }
 
         private void TrackTerminalUnityObject(Type type, bool potentiallyMechanical)
@@ -250,7 +306,7 @@ namespace KingmakerSmartSorter
             entry.Occurrences++;
             if (!string.IsNullOrEmpty(path))
             {
-                entry.Paths.Add(path);
+                entry.Paths.Add(CompactDiagnosticPath(path));
             }
         }
 

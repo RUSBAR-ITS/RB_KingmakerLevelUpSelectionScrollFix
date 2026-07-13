@@ -70,9 +70,19 @@ namespace KingmakerSmartSorter
             }
 
             string id = GetBlueprintId(blueprint);
-            EnsureBlueprintNode(blueprint, id, path);
-            TrackBlueprintReference();
-            return CreateBlueprintReference(blueprint, id);
+            string shallowReason;
+            bool expand = ShouldExpandBlueprint(blueprint, path, out shallowReason);
+            if (expand)
+            {
+                EnsureBlueprintNode(blueprint, id, path);
+            }
+
+            TrackBlueprintReference(blueprint.GetType(), expand, shallowReason);
+            return CreateBlueprintReference(
+                blueprint,
+                id,
+                expand,
+                shallowReason);
         }
 
         internal JObject CreateLocalizedValue(
@@ -217,7 +227,8 @@ namespace KingmakerSmartSorter
                 ["Guid"] = SafeBlueprintGuid(blueprint),
                 ["InternalName"] = SafeUnityName(blueprint),
                 ["ResolvedName"] = ReadStringProperty(blueprint, "Name"),
-                ["ResolvedDescription"] = ReadStringProperty(blueprint, "Description")
+                ["ResolvedDescription"] = ReadStringProperty(blueprint, "Description"),
+                ["FirstSourcePath"] = CompactDiagnosticPath(path)
             };
             m_BlueprintNodes[id] = node;
 
@@ -272,7 +283,7 @@ namespace KingmakerSmartSorter
 
             if (!string.IsNullOrEmpty(path))
             {
-                entry.Paths.Add(path);
+                entry.Paths.Add(CompactDiagnosticPath(path));
             }
         }
 
@@ -307,7 +318,7 @@ namespace KingmakerSmartSorter
 
             m_Errors.Add(new JObject
             {
-                ["Path"] = path ?? string.Empty,
+                ["Path"] = CompactDiagnosticPath(path),
                 ["Operation"] = operation ?? string.Empty,
                 ["ErrorType"] = errorType ?? string.Empty,
                 ["Message"] = message ?? string.Empty
@@ -321,19 +332,31 @@ namespace KingmakerSmartSorter
 
         private static JObject CreateBlueprintReference(
             BlueprintScriptableObject blueprint,
-            string id)
+            string id,
+            bool expanded,
+            string shallowReason)
         {
-            return new JObject
+            JObject result = new JObject
             {
-                ["$ref"] = id,
                 ["Kind"] = "BlueprintReference",
+                ["NodeId"] = id,
+                ["Expansion"] = expanded ? "Deep" : "Shallow",
+                ["ShallowReason"] = expanded ? string.Empty : shallowReason ?? string.Empty,
                 ["Type"] = blueprint.GetType().FullName,
                 ["ShortType"] = blueprint.GetType().Name,
                 ["Guid"] = SafeBlueprintGuid(blueprint),
                 ["InternalName"] = SafeUnityName(blueprint),
                 ["ResolvedName"] = ReadStringProperty(blueprint, "Name"),
-                ["ResolvedDescription"] = ReadStringProperty(blueprint, "Description")
+                ["ResolvedDescriptionPreview"] = CreateTextPreview(
+                    ReadStringProperty(blueprint, "Description"),
+                    240)
             };
+            if (expanded)
+            {
+                result["$ref"] = id;
+            }
+
+            return result;
         }
 
         private static string SafeBlueprintGuid(BlueprintScriptableObject blueprint)
@@ -380,6 +403,35 @@ namespace KingmakerSmartSorter
             {
                 return string.Empty;
             }
+        }
+
+        private static string CompactDiagnosticPath(string path)
+        {
+            const int maxLength = 2048;
+            const int prefixLength = 768;
+            const int suffixLength = 1024;
+            string value = path ?? string.Empty;
+            if (value.Length <= maxLength)
+            {
+                return value;
+            }
+
+            return value.Substring(0, prefixLength)
+                + "/...<"
+                + (value.Length - prefixLength - suffixLength)
+                + " chars omitted>.../"
+                + value.Substring(value.Length - suffixLength);
+        }
+
+        private static string CreateTextPreview(string value, int maxLength)
+        {
+            string text = value ?? string.Empty;
+            if (maxLength < 1 || text.Length <= maxLength)
+            {
+                return text;
+            }
+
+            return text.Substring(0, maxLength) + "...";
         }
 
         private sealed class LocalizationAccumulator
