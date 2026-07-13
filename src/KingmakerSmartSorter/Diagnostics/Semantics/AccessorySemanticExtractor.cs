@@ -78,7 +78,7 @@ namespace KingmakerSmartSorter
                     string syntheticId = nodeId + "|DirectItemAbility";
                     if (effectIds.Add(syntheticId))
                     {
-                        effects.Add(SemanticEffectJsonBuilder.BuildDirectAbility(
+                        effects.Add(m_EffectBuilder.BuildDirectAbility(
                             blueprint,
                             work.Source));
                         m_Coverage.AddRecognizedEffect(
@@ -179,14 +179,22 @@ namespace KingmakerSmartSorter
             List<string> categories = CollectCategories(effects);
             string internalName = ReadInternalName(uniqueItem);
             string localizedName = ReadLocalized(uniqueItem["Name"]);
-            bool usesInternalName = string.IsNullOrEmpty(localizedName);
-            string displayName = usesInternalName ? internalName : localizedName;
+            string nameSource = "GameLocalization";
+            string displayName = localizedName;
+            if (string.IsNullOrEmpty(displayName))
+            {
+                displayName = SemanticReferenceNameBuilder.BuildFallback(
+                    internalName,
+                    "BlueprintItem",
+                    out nameSource);
+            }
+            int activeEffectCount = CountActiveEffects(effects);
             return new JObject
             {
                 ["BlueprintGuid"] = (string)uniqueItem["BlueprintGuid"] ?? string.Empty,
                 ["InternalName"] = internalName,
                 ["Name"] = displayName,
-                ["NameSource"] = usesInternalName ? "InternalNameFallback" : "GameLocalization",
+                ["NameSource"] = nameSource,
                 ["Description"] = ReadLocalized(uniqueItem["Description"]),
                 ["Slot"] = NormalizeSlot(entity == null ? null : entity["FilterItemType"] as JObject),
                 ["Cost"] = uniqueItem["Cost"] == null
@@ -195,7 +203,9 @@ namespace KingmakerSmartSorter
                 ["EffectCategories"] = new JArray(categories),
                 ["Effects"] = effects,
                 ["UnhandledComponents"] = BuildUnhandled(unhandled),
-                ["HasRecognizedEffects"] = effects.Count > 0,
+                ["HasRecognizedEffects"] = activeEffectCount > 0,
+                ["ActiveEffectCount"] = activeEffectCount,
+                ["InactiveComponentCount"] = CountInactiveEffects(effects),
                 ["DirectEffectCount"] = CountEffectsByScope(effects, "Direct"),
                 ["GrantedEffectCount"] = CountEffectsByScope(effects, "Granted"),
                 ["NestedEffectCount"] = CountEffectsByScope(effects, "Nested"),
@@ -203,11 +213,35 @@ namespace KingmakerSmartSorter
             };
         }
 
+        private static int CountActiveEffects(JArray effects)
+        {
+            return effects.Count - CountInactiveEffects(effects);
+        }
+
+        private static int CountInactiveEffects(JArray effects)
+        {
+            int result = 0;
+            for (int i = 0; i < effects.Count; i++)
+            {
+                if ((bool?)effects[i]["IsInactive"] == true)
+                {
+                    result++;
+                }
+            }
+
+            return result;
+        }
+
         private static int CountEffectsByScope(JArray effects, string scope)
         {
             int result = 0;
             for (int i = 0; i < effects.Count; i++)
             {
+                if ((bool?)effects[i]["IsInactive"] == true)
+                {
+                    continue;
+                }
+
                 JObject source = effects[i]["Source"] as JObject;
                 if (source != null && (string)source["Scope"] == scope)
                 {
@@ -224,6 +258,11 @@ namespace KingmakerSmartSorter
             List<string> result = new List<string>();
             for (int i = 0; i < effects.Count; i++)
             {
+                if ((bool?)effects[i]["IsInactive"] == true)
+                {
+                    continue;
+                }
+
                 string category = (string)effects[i]["Category"] ?? string.Empty;
                 if (!string.IsNullOrEmpty(category) && seen.Add(category))
                 {

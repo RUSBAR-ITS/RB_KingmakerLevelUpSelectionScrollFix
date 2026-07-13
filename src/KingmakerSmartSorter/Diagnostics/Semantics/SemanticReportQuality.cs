@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
 namespace KingmakerSmartSorter
@@ -8,18 +9,24 @@ namespace KingmakerSmartSorter
         internal static JObject Build(JArray items)
         {
             int itemWithoutEffectsCount = 0;
-            int internalNameFallbackCount = 0;
+            int fallbackItemNameCount = 0;
             int missingDescriptionCount = 0;
             int genericSummaryCount = 0;
             int emptyParameterEffectCount = 0;
             int presenceBasedEffectCount = 0;
+            int inactiveComponentCount = 0;
             int missingSourceCount = 0;
-            int technicalReferenceNameFallbackCount = 0;
+            int gameLocalizedReferenceCount = 0;
+            int relatedGameLocalizedReferenceCount = 0;
+            int modLocalizedReferenceCount = 0;
+            int humanizedReferenceNameCount = 0;
             int maxEffectCount = 0;
             string maxEffectItemGuid = string.Empty;
             string maxEffectItemName = string.Empty;
             JArray itemsWithoutEffects = new JArray();
             JArray fallbackNames = new JArray();
+            Dictionary<string, HumanizedReferenceInfo> humanizedReferences =
+                new Dictionary<string, HumanizedReferenceInfo>(StringComparer.Ordinal);
 
             for (int i = 0; i < items.Count; i++)
             {
@@ -30,15 +37,16 @@ namespace KingmakerSmartSorter
                 }
 
                 JArray effects = item["Effects"] as JArray ?? new JArray();
-                if (effects.Count == 0)
+                int activeEffectCount = (int?)item["ActiveEffectCount"] ?? effects.Count;
+                if (activeEffectCount == 0)
                 {
                     itemWithoutEffectsCount++;
                     itemsWithoutEffects.Add(BuildItemReference(item));
                 }
 
-                if ((string)item["NameSource"] == "InternalNameFallback")
+                if ((string)item["NameSource"] != "GameLocalization")
                 {
-                    internalNameFallbackCount++;
+                    fallbackItemNameCount++;
                     fallbackNames.Add(BuildItemReference(item));
                 }
 
@@ -72,18 +80,32 @@ namespace KingmakerSmartSorter
 
                     JObject parameters = effect["Parameters"] as JObject;
                     bool isPresenceBased = (bool?)effect["IsPresenceBased"] == true;
+                    bool isInactive = (bool?)effect["IsInactive"] == true;
                     if (isPresenceBased)
                     {
                         presenceBasedEffectCount++;
                     }
 
+                    if (isInactive)
+                    {
+                        inactiveComponentCount++;
+                    }
+
                     if (!isPresenceBased
+                        && !isInactive
                         && (parameters == null || parameters.Count == 0))
                     {
                         emptyParameterEffectCount++;
                     }
 
-                    technicalReferenceNameFallbackCount += CountNameFallbacks(parameters);
+                    CountReferenceNameSources(
+                        effect,
+                        ref gameLocalizedReferenceCount,
+                        ref relatedGameLocalizedReferenceCount,
+                        ref modLocalizedReferenceCount,
+                        ref humanizedReferenceNameCount,
+                        humanizedReferences,
+                        (string)item["Name"] ?? string.Empty);
 
                     JObject source = effect["Source"] as JObject;
                     if (source == null
@@ -98,18 +120,23 @@ namespace KingmakerSmartSorter
             return new JObject
             {
                 ["ItemWithoutEffectsCount"] = itemWithoutEffectsCount,
-                ["InternalNameFallbackCount"] = internalNameFallbackCount,
+                ["FallbackItemNameCount"] = fallbackItemNameCount,
                 ["MissingDescriptionCount"] = missingDescriptionCount,
                 ["GenericSummaryCount"] = genericSummaryCount,
                 ["EmptyParameterEffectCount"] = emptyParameterEffectCount,
                 ["PresenceBasedEffectCount"] = presenceBasedEffectCount,
+                ["InactiveComponentCount"] = inactiveComponentCount,
                 ["MissingSourceCount"] = missingSourceCount,
-                ["TechnicalReferenceNameFallbackCount"] = technicalReferenceNameFallbackCount,
+                ["GameLocalizedReferenceCount"] = gameLocalizedReferenceCount,
+                ["RelatedGameLocalizedReferenceCount"] = relatedGameLocalizedReferenceCount,
+                ["ModLocalizedReferenceCount"] = modLocalizedReferenceCount,
+                ["HumanizedReferenceNameCount"] = humanizedReferenceNameCount,
                 ["MaximumEffectCountOnItem"] = maxEffectCount,
                 ["MaximumEffectItemGuid"] = maxEffectItemGuid,
                 ["MaximumEffectItemName"] = maxEffectItemName,
                 ["ItemsWithoutEffects"] = itemsWithoutEffects,
-                ["ItemsUsingInternalNameFallback"] = fallbackNames
+                ["ItemsUsingFallbackNames"] = fallbackNames,
+                ["HumanizedReferences"] = BuildHumanizedReferences(humanizedReferences)
             };
         }
 
@@ -126,42 +153,148 @@ namespace KingmakerSmartSorter
             };
         }
 
-        private static int CountNameFallbacks(JToken value)
+        private static void CountReferenceNameSources(
+            JToken value,
+            ref int gameLocalizations,
+            ref int relatedGameLocalizations,
+            ref int modLocalizations,
+            ref int humanizedNames,
+            Dictionary<string, HumanizedReferenceInfo> humanizedReferences,
+            string itemName)
         {
             if (value == null)
             {
-                return 0;
+                return;
             }
 
-            int result = 0;
             JObject obj = value as JObject;
             if (obj != null)
             {
-                if ((string)obj["NameSource"] == "InternalNameFallback")
+                string source = (string)obj["NameSource"] ?? string.Empty;
+                if (source == "GameLocalization")
                 {
-                    result++;
+                    gameLocalizations++;
+                }
+                else if (source == "RelatedGameLocalization")
+                {
+                    relatedGameLocalizations++;
+                }
+                else if (source == "ModLocalization")
+                {
+                    modLocalizations++;
+                }
+                else if (source == "HumanizedInternalName")
+                {
+                    humanizedNames++;
+                    AddHumanizedReference(humanizedReferences, obj, itemName);
                 }
 
                 foreach (JProperty property in obj.Properties())
                 {
-                    result += CountNameFallbacks(property.Value);
+                    CountReferenceNameSources(
+                        property.Value,
+                        ref gameLocalizations,
+                        ref relatedGameLocalizations,
+                        ref modLocalizations,
+                        ref humanizedNames,
+                        humanizedReferences,
+                        itemName);
                 }
 
-                return result;
+                return;
             }
 
             JArray array = value as JArray;
             if (array == null)
             {
-                return 0;
+                return;
             }
 
             for (int i = 0; i < array.Count; i++)
             {
-                result += CountNameFallbacks(array[i]);
+                CountReferenceNameSources(
+                    array[i],
+                    ref gameLocalizations,
+                    ref relatedGameLocalizations,
+                    ref modLocalizations,
+                    ref humanizedNames,
+                    humanizedReferences,
+                    itemName);
+            }
+        }
+
+        private static void AddHumanizedReference(
+            Dictionary<string, HumanizedReferenceInfo> references,
+            JObject value,
+            string itemName)
+        {
+            string internalName = (string)value["InternalName"] ?? string.Empty;
+            string type = (string)value["Type"]
+                ?? (string)value["BlueprintType"]
+                ?? string.Empty;
+            string key = type + "|" + internalName;
+            HumanizedReferenceInfo info;
+            if (!references.TryGetValue(key, out info))
+            {
+                info = new HumanizedReferenceInfo
+                {
+                    Type = type,
+                    InternalName = internalName,
+                    DisplayName = (string)value["Name"] ?? string.Empty
+                };
+                references.Add(key, info);
+            }
+
+            info.Count++;
+            if (!string.IsNullOrEmpty(itemName)
+                && info.SampleItems.Count < 3
+                && !info.SampleItems.Contains(itemName))
+            {
+                info.SampleItems.Add(itemName);
+            }
+        }
+
+        private static JArray BuildHumanizedReferences(
+            Dictionary<string, HumanizedReferenceInfo> references)
+        {
+            List<HumanizedReferenceInfo> values =
+                new List<HumanizedReferenceInfo>(references.Values);
+            values.Sort(delegate(
+                HumanizedReferenceInfo left,
+                HumanizedReferenceInfo right)
+            {
+                int count = right.Count.CompareTo(left.Count);
+                return count != 0
+                    ? count
+                    : string.Compare(
+                        left.InternalName,
+                        right.InternalName,
+                        StringComparison.Ordinal);
+            });
+
+            JArray result = new JArray();
+            for (int i = 0; i < values.Count; i++)
+            {
+                result.Add(new JObject
+                {
+                    ["Count"] = values[i].Count,
+                    ["Type"] = values[i].Type,
+                    ["InternalName"] = values[i].InternalName,
+                    ["DisplayName"] = values[i].DisplayName,
+                    ["SampleItems"] = new JArray(values[i].SampleItems)
+                });
             }
 
             return result;
+        }
+
+        private sealed class HumanizedReferenceInfo
+        {
+            internal int Count;
+            internal string Type;
+            internal string InternalName;
+            internal string DisplayName;
+            internal readonly List<string> SampleItems = new List<string>();
         }
     }
 }

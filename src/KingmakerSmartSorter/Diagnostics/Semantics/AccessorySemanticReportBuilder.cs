@@ -6,7 +6,7 @@ namespace KingmakerSmartSorter
 {
     internal static class AccessorySemanticReportBuilder
     {
-        private const int SchemaVersion = 3;
+        private const int SchemaVersion = 4;
 
         internal static JObject Build(JObject sourceReport)
         {
@@ -58,12 +58,33 @@ namespace KingmakerSmartSorter
                         ? string.Empty
                         : (string)sourceMetadata["Locale"] ?? string.Empty,
                     ["Scope"] = "Accessories",
-                    ["Purpose"] = "Compact parameter-based accessory mechanics report. Descriptions are retained for verification and are not used to infer effects.",
+                    ["Purpose"] = SemanticLocalization.Report(
+                        "Purpose",
+                        "Compact parameter-based accessory mechanics report. Descriptions are retained for verification and are not used to infer effects."),
                     ["ScopeDefinitions"] = new JObject
                     {
-                        ["Direct"] = "A component attached directly to the item or one of its enchantments, plus the item's directly exposed ability.",
-                        ["Granted"] = "A mechanic inside a feature or fact directly granted by the item.",
-                        ["Nested"] = "An implementation detail reached through an ability, buff, variant, or a deeper reference chain."
+                        ["Direct"] = SemanticLocalization.Report(
+                            "ScopeDirect",
+                            "A component attached directly to the item or one of its enchantments, plus the item's directly exposed ability."),
+                        ["Granted"] = SemanticLocalization.Report(
+                            "ScopeGranted",
+                            "A mechanic inside a feature or fact directly granted by the item."),
+                        ["Nested"] = SemanticLocalization.Report(
+                            "ScopeNested",
+                            "An implementation detail reached through an ability, buff, variant, or a deeper reference chain.")
+                    },
+                    ["DefinitionModes"] = new JObject
+                    {
+                        ["Parameterized"] = SemanticLocalization.DefinitionMode("Parameterized"),
+                        ["PresenceBased"] = SemanticLocalization.DefinitionMode("PresenceBased"),
+                        ["Inactive"] = SemanticLocalization.DefinitionMode("Inactive")
+                    },
+                    ["NameSources"] = new JObject
+                    {
+                        ["GameLocalization"] = SemanticLocalization.NameSource("GameLocalization"),
+                        ["RelatedGameLocalization"] = SemanticLocalization.NameSource("RelatedGameLocalization"),
+                        ["ModLocalization"] = SemanticLocalization.NameSource("ModLocalization"),
+                        ["HumanizedInternalName"] = SemanticLocalization.NameSource("HumanizedInternalName")
                     }
                 },
                 ["Statistics"] = coverage.ToJson(),

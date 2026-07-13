@@ -15,6 +15,21 @@ namespace KingmakerSmartSorter
             return TranslateOrFallback("Semantic.Scope." + scope, scope);
         }
 
+        internal static string DefinitionMode(string mode)
+        {
+            return TranslateOrFallback("Semantic.DefinitionMode." + mode, mode);
+        }
+
+        internal static string NameSource(string source)
+        {
+            return TranslateOrFallback("Semantic.NameSource." + source, source);
+        }
+
+        internal static string Report(string key, string fallback)
+        {
+            return TranslateOrFallback("Semantic.Report." + key, fallback);
+        }
+
         internal static string Label(string label)
         {
             return TranslateOrFallback("Semantic.Label." + label, label);
@@ -27,6 +42,13 @@ namespace KingmakerSmartSorter
             return TryTranslate(key, out translated)
                 ? translated
                 : HumanizeIdentifier(componentType);
+        }
+
+        internal static bool TryReference(string internalName, out string value)
+        {
+            return TryTranslate(
+                "Semantic.Reference." + (internalName ?? string.Empty),
+                out value);
         }
 
         internal static string EnumValue(string type, string raw, string existingDisplay)

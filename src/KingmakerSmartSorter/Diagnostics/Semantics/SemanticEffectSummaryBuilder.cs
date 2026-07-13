@@ -13,7 +13,17 @@ namespace KingmakerSmartSorter
             JObject parameters)
         {
             string type = componentType ?? string.Empty;
-            if (IsPresenceBased(type))
+            if (SemanticComponentSemantics.IsInactive(type, parameters))
+            {
+                return string.Format(
+                    CultureInfo.CurrentCulture,
+                    SemanticLocalization.Template(
+                        "InactiveComponent",
+                        "Inactive component: {0}"),
+                    SemanticLocalization.Component(type));
+            }
+
+            if (SemanticComponentSemantics.IsPresenceBased(type))
             {
                 return SemanticLocalization.Component(type);
             }
@@ -148,14 +158,6 @@ namespace KingmakerSmartSorter
             }
 
             return BuildGeneric(type, category, parameters);
-        }
-
-        internal static bool IsPresenceBased(string componentType)
-        {
-            return componentType == "AddImmunityToCriticalHits"
-                || componentType == "AddImmunityToEnergyDrain"
-                || componentType == "AddImmunityToPrecisionDamage"
-                || componentType == "AddImmunityToAbilityScoreDamage";
         }
 
         private static string BuildGeneric(

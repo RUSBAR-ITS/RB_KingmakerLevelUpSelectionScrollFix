@@ -91,6 +91,28 @@ namespace KingmakerSmartSorter
                 : Convert.ToString(primitive.Value, System.Globalization.CultureInfo.InvariantCulture);
         }
 
+        internal string ResolveBlueprintName(JObject value, out string nameSource)
+        {
+            string name = value == null ? string.Empty : (string)value["ResolvedName"];
+            nameSource = "GameLocalization";
+            if (string.IsNullOrEmpty(name)
+                && m_Graph != null
+                && m_Graph.TryResolveRelatedLocalizedName(value, out name))
+            {
+                nameSource = "RelatedGameLocalization";
+            }
+
+            if (!string.IsNullOrEmpty(name))
+            {
+                return name;
+            }
+
+            return SemanticReferenceNameBuilder.BuildFallback(
+                value == null ? string.Empty : (string)value["InternalName"],
+                value == null ? string.Empty : (string)value["ShortType"],
+                out nameSource);
+        }
+
         private JToken Normalize(
             JToken value,
             int depth,
@@ -186,24 +208,20 @@ namespace KingmakerSmartSorter
             };
         }
 
-        private static JObject NormalizeBlueprintReference(JObject value)
+        private JObject NormalizeBlueprintReference(JObject value)
         {
-            string name = (string)value["ResolvedName"];
-            bool usesInternalName = string.IsNullOrEmpty(name);
-            if (usesInternalName)
-            {
-                name = (string)value["InternalName"] ?? string.Empty;
-            }
+            string internalName = (string)value["InternalName"] ?? string.Empty;
+            string blueprintType = (string)value["ShortType"] ?? string.Empty;
+            string nameSource;
+            string name = ResolveBlueprintName(value, out nameSource);
 
             return new JObject
             {
                 ["Guid"] = (string)value["Guid"] ?? string.Empty,
-                ["Type"] = (string)value["ShortType"] ?? string.Empty,
-                ["InternalName"] = (string)value["InternalName"] ?? string.Empty,
+                ["Type"] = blueprintType,
+                ["InternalName"] = internalName,
                 ["Name"] = name,
-                ["NameSource"] = usesInternalName
-                    ? "InternalNameFallback"
-                    : "GameLocalization",
+                ["NameSource"] = nameSource,
                 ["DescriptionPreview"] = (string)value["ResolvedDescriptionPreview"] ?? string.Empty
             };
         }
