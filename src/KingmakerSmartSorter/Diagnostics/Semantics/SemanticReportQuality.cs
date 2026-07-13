@@ -20,13 +20,25 @@ namespace KingmakerSmartSorter
             int relatedGameLocalizedReferenceCount = 0;
             int modLocalizedReferenceCount = 0;
             int humanizedReferenceNameCount = 0;
+            int humanizedParameterReferenceCount = 0;
+            int humanizedSourceNameCount = 0;
+            int effectGroupCount = 0;
+            int repeatedEffectGroupCount = 0;
+            int collapsedEffectCount = 0;
+            int maximumRepeatCount = 0;
+            string maximumRepeatItemName = string.Empty;
+            string maximumRepeatSummary = string.Empty;
+            int summaryWithFallbackTextCount = 0;
             int maxEffectCount = 0;
             string maxEffectItemGuid = string.Empty;
             string maxEffectItemName = string.Empty;
             JArray itemsWithoutEffects = new JArray();
             JArray fallbackNames = new JArray();
+            JArray itemsWithFallbackSummaries = new JArray();
             Dictionary<string, HumanizedReferenceInfo> humanizedReferences =
                 new Dictionary<string, HumanizedReferenceInfo>(StringComparer.Ordinal);
+            Dictionary<string, UnlocalizedComponentInfo> unlocalizedComponents =
+                new Dictionary<string, UnlocalizedComponentInfo>(StringComparer.Ordinal);
 
             for (int i = 0; i < items.Count; i++)
             {
@@ -37,6 +49,7 @@ namespace KingmakerSmartSorter
                 }
 
                 JArray effects = item["Effects"] as JArray ?? new JArray();
+                JArray effectGroups = item["EffectGroups"] as JArray ?? new JArray();
                 int activeEffectCount = (int?)item["ActiveEffectCount"] ?? effects.Count;
                 if (activeEffectCount == 0)
                 {
@@ -62,6 +75,27 @@ namespace KingmakerSmartSorter
                     maxEffectItemName = (string)item["Name"] ?? string.Empty;
                 }
 
+                bool itemHasFallbackSummary = false;
+                effectGroupCount += effectGroups.Count;
+                for (int groupIndex = 0; groupIndex < effectGroups.Count; groupIndex++)
+                {
+                    JObject group = effectGroups[groupIndex] as JObject;
+                    int count = group == null ? 0 : (int?)group["Count"] ?? 0;
+                    if (count <= 1)
+                    {
+                        continue;
+                    }
+
+                    repeatedEffectGroupCount++;
+                    collapsedEffectCount += count - 1;
+                    if (count > maximumRepeatCount)
+                    {
+                        maximumRepeatCount = count;
+                        maximumRepeatItemName = (string)item["Name"] ?? string.Empty;
+                        maximumRepeatSummary = (string)group["Summary"] ?? string.Empty;
+                    }
+                }
+
                 for (int effectIndex = 0; effectIndex < effects.Count; effectIndex++)
                 {
                     JObject effect = effects[effectIndex] as JObject;
@@ -76,6 +110,23 @@ namespace KingmakerSmartSorter
                         StringComparison.Ordinal))
                     {
                         genericSummaryCount++;
+                    }
+
+                    string summary = (string)effect["Summary"] ?? string.Empty;
+                    if (ContainsLatinWord(summary))
+                    {
+                        summaryWithFallbackTextCount++;
+                        itemHasFallbackSummary = true;
+                    }
+
+                    string componentDisplay = (string)effect["ComponentDisplay"]
+                        ?? string.Empty;
+                    if (ContainsLatinWord(componentDisplay))
+                    {
+                        AddUnlocalizedComponent(
+                            unlocalizedComponents,
+                            effect,
+                            (string)item["Name"] ?? string.Empty);
                     }
 
                     JObject parameters = effect["Parameters"] as JObject;
@@ -99,11 +150,22 @@ namespace KingmakerSmartSorter
                     }
 
                     CountReferenceNameSources(
-                        effect,
+                        effect["Parameters"],
                         ref gameLocalizedReferenceCount,
                         ref relatedGameLocalizedReferenceCount,
                         ref modLocalizedReferenceCount,
                         ref humanizedReferenceNameCount,
+                        ref humanizedParameterReferenceCount,
+                        humanizedReferences,
+                        (string)item["Name"] ?? string.Empty);
+
+                    CountReferenceNameSources(
+                        effect["Source"],
+                        ref gameLocalizedReferenceCount,
+                        ref relatedGameLocalizedReferenceCount,
+                        ref modLocalizedReferenceCount,
+                        ref humanizedReferenceNameCount,
+                        ref humanizedSourceNameCount,
                         humanizedReferences,
                         (string)item["Name"] ?? string.Empty);
 
@@ -114,6 +176,11 @@ namespace KingmakerSmartSorter
                     {
                         missingSourceCount++;
                     }
+                }
+
+                if (itemHasFallbackSummary)
+                {
+                    itemsWithFallbackSummaries.Add(BuildItemReference(item));
                 }
             }
 
@@ -131,12 +198,24 @@ namespace KingmakerSmartSorter
                 ["RelatedGameLocalizedReferenceCount"] = relatedGameLocalizedReferenceCount,
                 ["ModLocalizedReferenceCount"] = modLocalizedReferenceCount,
                 ["HumanizedReferenceNameCount"] = humanizedReferenceNameCount,
+                ["HumanizedParameterReferenceCount"] = humanizedParameterReferenceCount,
+                ["HumanizedSourceNameCount"] = humanizedSourceNameCount,
+                ["EffectGroupCount"] = effectGroupCount,
+                ["RepeatedEffectGroupCount"] = repeatedEffectGroupCount,
+                ["CollapsedEffectCount"] = collapsedEffectCount,
+                ["MaximumRepeatCount"] = maximumRepeatCount,
+                ["MaximumRepeatItemName"] = maximumRepeatItemName,
+                ["MaximumRepeatSummary"] = maximumRepeatSummary,
+                ["SummaryWithFallbackTextCount"] = summaryWithFallbackTextCount,
                 ["MaximumEffectCountOnItem"] = maxEffectCount,
                 ["MaximumEffectItemGuid"] = maxEffectItemGuid,
                 ["MaximumEffectItemName"] = maxEffectItemName,
                 ["ItemsWithoutEffects"] = itemsWithoutEffects,
                 ["ItemsUsingFallbackNames"] = fallbackNames,
-                ["HumanizedReferences"] = BuildHumanizedReferences(humanizedReferences)
+                ["ItemsWithFallbackTextSummaries"] = itemsWithFallbackSummaries,
+                ["HumanizedReferences"] = BuildHumanizedReferences(humanizedReferences),
+                ["UnlocalizedComponentTypes"] = BuildUnlocalizedComponents(
+                    unlocalizedComponents)
             };
         }
 
@@ -159,6 +238,7 @@ namespace KingmakerSmartSorter
             ref int relatedGameLocalizations,
             ref int modLocalizations,
             ref int humanizedNames,
+            ref int areaHumanizedNames,
             Dictionary<string, HumanizedReferenceInfo> humanizedReferences,
             string itemName)
         {
@@ -186,6 +266,7 @@ namespace KingmakerSmartSorter
                 else if (source == "HumanizedInternalName")
                 {
                     humanizedNames++;
+                    areaHumanizedNames++;
                     AddHumanizedReference(humanizedReferences, obj, itemName);
                 }
 
@@ -197,6 +278,7 @@ namespace KingmakerSmartSorter
                         ref relatedGameLocalizations,
                         ref modLocalizations,
                         ref humanizedNames,
+                        ref areaHumanizedNames,
                         humanizedReferences,
                         itemName);
                 }
@@ -218,6 +300,7 @@ namespace KingmakerSmartSorter
                     ref relatedGameLocalizations,
                     ref modLocalizations,
                     ref humanizedNames,
+                    ref areaHumanizedNames,
                     humanizedReferences,
                     itemName);
             }
@@ -288,11 +371,125 @@ namespace KingmakerSmartSorter
             return result;
         }
 
+        private static void AddUnlocalizedComponent(
+            Dictionary<string, UnlocalizedComponentInfo> components,
+            JObject effect,
+            string itemName)
+        {
+            string type = (string)effect["ComponentType"] ?? string.Empty;
+            UnlocalizedComponentInfo info;
+            if (!components.TryGetValue(type, out info))
+            {
+                info = new UnlocalizedComponentInfo
+                {
+                    ComponentType = type,
+                    DisplayName = (string)effect["ComponentDisplay"] ?? string.Empty
+                };
+                components.Add(type, info);
+            }
+
+            info.Count++;
+            if (!string.IsNullOrEmpty(itemName)
+                && info.SampleItems.Count < 3
+                && !info.SampleItems.Contains(itemName))
+            {
+                info.SampleItems.Add(itemName);
+            }
+        }
+
+        private static JArray BuildUnlocalizedComponents(
+            Dictionary<string, UnlocalizedComponentInfo> components)
+        {
+            List<UnlocalizedComponentInfo> values =
+                new List<UnlocalizedComponentInfo>(components.Values);
+            values.Sort(delegate(
+                UnlocalizedComponentInfo left,
+                UnlocalizedComponentInfo right)
+            {
+                int count = right.Count.CompareTo(left.Count);
+                return count != 0
+                    ? count
+                    : string.Compare(
+                        left.ComponentType,
+                        right.ComponentType,
+                        StringComparison.Ordinal);
+            });
+
+            JArray result = new JArray();
+            for (int i = 0; i < values.Count; i++)
+            {
+                result.Add(new JObject
+                {
+                    ["Count"] = values[i].Count,
+                    ["ComponentType"] = values[i].ComponentType,
+                    ["DisplayName"] = values[i].DisplayName,
+                    ["SampleItems"] = new JArray(values[i].SampleItems)
+                });
+            }
+
+            return result;
+        }
+
+        private static bool ContainsLatinWord(string value)
+        {
+            int run = 0;
+            for (int i = 0; i < (value ?? string.Empty).Length; i++)
+            {
+                char c = value[i];
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z'))
+                {
+                    run++;
+                }
+                else
+                {
+                    if (run > 0 && !IsRomanNumeralRun(value, i - run, run))
+                    {
+                        if (run >= 3)
+                        {
+                            return true;
+                        }
+                    }
+
+                    run = 0;
+                }
+            }
+
+            return run >= 3 && !IsRomanNumeralRun(value, value.Length - run, run);
+        }
+
+        private static bool IsRomanNumeralRun(string value, int start, int length)
+        {
+            for (int i = start; i < start + length; i++)
+            {
+                char c = char.ToUpperInvariant(value[i]);
+                if (c != 'I'
+                    && c != 'V'
+                    && c != 'X'
+                    && c != 'L'
+                    && c != 'C'
+                    && c != 'D'
+                    && c != 'M')
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         private sealed class HumanizedReferenceInfo
         {
             internal int Count;
             internal string Type;
             internal string InternalName;
+            internal string DisplayName;
+            internal readonly List<string> SampleItems = new List<string>();
+        }
+
+        private sealed class UnlocalizedComponentInfo
+        {
+            internal int Count;
+            internal string ComponentType;
             internal string DisplayName;
             internal readonly List<string> SampleItems = new List<string>();
         }

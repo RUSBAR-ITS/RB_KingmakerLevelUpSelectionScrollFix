@@ -6,7 +6,7 @@ namespace KingmakerSmartSorter
 {
     internal static class AccessorySemanticReportBuilder
     {
-        private const int SchemaVersion = 4;
+        private const int SchemaVersion = 5;
 
         internal static JObject Build(JObject sourceReport)
         {
@@ -72,6 +72,15 @@ namespace KingmakerSmartSorter
                         ["Nested"] = SemanticLocalization.Report(
                             "ScopeNested",
                             "An implementation detail reached through an ability, buff, variant, or a deeper reference chain.")
+                    },
+                    ["EffectViews"] = new JObject
+                    {
+                        ["EffectGroups"] = SemanticLocalization.Report(
+                            "EffectGroups",
+                            "Human-readable groups of effects with identical mechanics and parameters. Count shows how many full Effects entries were grouped."),
+                        ["Effects"] = SemanticLocalization.Report(
+                            "Effects",
+                            "Complete ungrouped effects with source paths and blueprint chains retained for verification.")
                     },
                     ["DefinitionModes"] = new JObject
                     {

@@ -8,7 +8,7 @@ namespace KingmakerSmartSorter
     public static class Main
     {
         internal const string ModId = "KingmakerSmartSorter";
-        internal const string ModVersion = "0.7.2";
+        internal const string ModVersion = "0.7.3";
 
         internal static Settings Settings;
 

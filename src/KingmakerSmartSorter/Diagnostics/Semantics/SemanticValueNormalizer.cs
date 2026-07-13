@@ -93,7 +93,17 @@ namespace KingmakerSmartSorter
 
         internal string ResolveBlueprintName(JObject value, out string nameSource)
         {
-            string name = value == null ? string.Empty : (string)value["ResolvedName"];
+            string internalName = value == null
+                ? string.Empty
+                : (string)value["InternalName"] ?? string.Empty;
+            string name;
+            if (SemanticLocalization.TryReference(internalName, out name))
+            {
+                nameSource = "ModLocalization";
+                return name;
+            }
+
+            name = value == null ? string.Empty : (string)value["ResolvedName"];
             nameSource = "GameLocalization";
             if (string.IsNullOrEmpty(name)
                 && m_Graph != null
@@ -108,7 +118,7 @@ namespace KingmakerSmartSorter
             }
 
             return SemanticReferenceNameBuilder.BuildFallback(
-                value == null ? string.Empty : (string)value["InternalName"],
+                internalName,
                 value == null ? string.Empty : (string)value["ShortType"],
                 out nameSource);
         }

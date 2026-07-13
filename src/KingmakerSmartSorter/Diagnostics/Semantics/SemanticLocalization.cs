@@ -61,6 +61,11 @@ namespace KingmakerSmartSorter
                 return translated;
             }
 
+            if (TryTranslate("Semantic.EnumValue." + raw, out translated))
+            {
+                return translated;
+            }
+
             if (!string.IsNullOrEmpty(raw) && raw.IndexOf(',') >= 0)
             {
                 string[] members = raw.Split(',');
@@ -71,6 +76,13 @@ namespace KingmakerSmartSorter
                     string member = members[i].Trim();
                     if (TryTranslate(
                         "Semantic.Enum." + shortType + "." + member,
+                        out translated))
+                    {
+                        displays[i] = translated;
+                        translatedAny = true;
+                    }
+                    else if (TryTranslate(
+                        "Semantic.EnumValue." + member,
                         out translated))
                     {
                         displays[i] = translated;

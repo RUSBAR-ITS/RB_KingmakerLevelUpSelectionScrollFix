@@ -177,6 +177,7 @@ namespace KingmakerSmartSorter
             }
 
             List<string> categories = CollectCategories(effects);
+            JArray effectGroups = SemanticEffectGroupBuilder.Build(effects);
             string internalName = ReadInternalName(uniqueItem);
             string localizedName = ReadLocalized(uniqueItem["Name"]);
             string nameSource = "GameLocalization";
@@ -201,10 +202,12 @@ namespace KingmakerSmartSorter
                     ? 0
                     : uniqueItem["Cost"].DeepClone(),
                 ["EffectCategories"] = new JArray(categories),
+                ["EffectGroups"] = effectGroups,
                 ["Effects"] = effects,
                 ["UnhandledComponents"] = BuildUnhandled(unhandled),
                 ["HasRecognizedEffects"] = activeEffectCount > 0,
                 ["ActiveEffectCount"] = activeEffectCount,
+                ["EffectGroupCount"] = effectGroups.Count,
                 ["InactiveComponentCount"] = CountInactiveEffects(effects),
                 ["DirectEffectCount"] = CountEffectsByScope(effects, "Direct"),
                 ["GrantedEffectCount"] = CountEffectsByScope(effects, "Granted"),
