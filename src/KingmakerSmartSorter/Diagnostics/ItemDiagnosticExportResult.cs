@@ -6,6 +6,8 @@ namespace KingmakerSmartSorter
 
         internal string OutputPath { get; set; }
 
+        internal string AdditionalOutputPath { get; set; }
+
         internal string Error { get; set; }
 
         internal int ItemCount { get; set; }
@@ -13,5 +15,7 @@ namespace KingmakerSmartSorter
         internal int BlueprintCount { get; set; }
 
         internal long FileSize { get; set; }
+
+        internal long AdditionalFileSize { get; set; }
     }
 }

@@ -218,6 +218,9 @@ namespace KingmakerSmartSorter
                     + result.ItemCount
                     + Environment.NewLine
                     + result.OutputPath
+                    + (string.IsNullOrEmpty(result.AdditionalOutputPath)
+                        ? string.Empty
+                        : Environment.NewLine + result.AdditionalOutputPath)
                 : ModLocalization.T("Settings.ExportFailed")
                     + ": "
                     + result.Error;

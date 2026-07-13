@@ -54,11 +54,27 @@ namespace KingmakerSmartSorter
                     ItemDiagnosticTabInfo.GetFileName(tab));
                 long fileSize = DiagnosticFileWriter.WriteVerified(outputPath, report);
 
+                string additionalOutputPath = string.Empty;
+                long additionalFileSize = 0;
+                if (tab == ItemDiagnosticTab.Accessories)
+                {
+                    JObject semanticReport = AccessorySemanticReportBuilder.Build(report);
+                    additionalOutputPath = Path.Combine(
+                        modPath ?? string.Empty,
+                        DiagnosticsDirectoryName,
+                        "Items_Accessories_Semantic.json");
+                    additionalFileSize = DiagnosticFileWriter.WriteVerified(
+                        additionalOutputPath,
+                        semanticReport);
+                }
+
                 result.Success = true;
                 result.OutputPath = outputPath;
+                result.AdditionalOutputPath = additionalOutputPath;
                 result.ItemCount = entities.Count;
                 result.BlueprintCount = graph.BlueprintCount;
                 result.FileSize = fileSize;
+                result.AdditionalFileSize = additionalFileSize;
 
                 Logger.Info(
                     "Item diagnostics exported: tab="
@@ -87,8 +103,13 @@ namespace KingmakerSmartSorter
                     + graph.SuppressedErrorCount
                     + ", bytes="
                     + result.FileSize
+                    + ", semanticBytes="
+                    + result.AdditionalFileSize
                     + ", path="
                     + outputPath
+                    + (string.IsNullOrEmpty(result.AdditionalOutputPath)
+                        ? string.Empty
+                        : ", semanticPath=" + result.AdditionalOutputPath)
                     + ".");
             }
             catch (Exception ex)
