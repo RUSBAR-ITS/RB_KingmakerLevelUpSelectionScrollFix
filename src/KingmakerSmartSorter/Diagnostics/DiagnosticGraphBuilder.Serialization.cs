@@ -26,6 +26,7 @@ namespace KingmakerSmartSorter
 
             if (depth > EmergencyMaxDepth)
             {
+                TrackTruncation("EmergencyDepthLimit");
                 AddError(
                     path,
                     "EmergencyDepthLimit",
@@ -47,7 +48,7 @@ namespace KingmakerSmartSorter
             Enum enumValue = value as Enum;
             if (enumValue != null)
             {
-                return SerializeEnum(enumValue);
+                return SerializeEnum(enumValue, path);
             }
 
             LocalizedString localizedString = value as LocalizedString;
@@ -57,15 +58,21 @@ namespace KingmakerSmartSorter
             }
 
             BlueprintScriptableObject blueprint = value as BlueprintScriptableObject;
-            if (blueprint != null)
+            if (!ReferenceEquals(blueprint, null))
             {
                 return ReferenceBlueprint(blueprint, path);
             }
 
-            UnityEngine.Object unityObject = value as UnityEngine.Object;
-            if (unityObject != null)
+            BlueprintComponent component = value as BlueprintComponent;
+            if (!ReferenceEquals(component, null))
             {
-                return SerializeUnityObject(unityObject);
+                return SerializeBlueprintComponent(component, path, depth + 1);
+            }
+
+            UnityEngine.Object unityObject = value as UnityEngine.Object;
+            if (!ReferenceEquals(unityObject, null))
+            {
+                return SerializeTerminalUnityObject(unityObject, path);
             }
 
             if (value is Type)
@@ -121,6 +128,7 @@ namespace KingmakerSmartSorter
             {
                 if (m_ObjectIds.TryGetValue(value, out id))
                 {
+                    TrackObjectReference();
                     return CreateReference(id);
                 }
 
@@ -157,6 +165,13 @@ namespace KingmakerSmartSorter
             {
                 FieldInfo field = fields[i];
                 string fieldPath = path + "/" + field.DeclaringType.FullName + "." + field.Name;
+                string ignoredReason;
+                if (TryGetIgnoredFieldReason(field, out ignoredReason))
+                {
+                    TrackIgnoredField(field, ignoredReason);
+                    continue;
+                }
+
                 JObject entry = new JObject
                 {
                     ["Name"] = field.Name,
@@ -194,6 +209,11 @@ namespace KingmakerSmartSorter
                 RegisterLocalization(key, resolved, path);
             }
 
+            string status = !string.IsNullOrEmpty(resolved)
+                ? "Resolved"
+                : !string.IsNullOrEmpty(key) ? "Unresolved" : "MissingKey";
+            TrackLocalizedValue(status, key);
+
             return new JObject
             {
                 ["Kind"] = "LocalizedString",
@@ -201,26 +221,7 @@ namespace KingmakerSmartSorter
                 ["Resolved"] = resolved,
                 ["ShouldProcess"] = value.ShouldProcess,
                 ["ResolutionSource"] = "GameLocalization",
-                ["ResolutionStatus"] = !string.IsNullOrEmpty(resolved)
-                    ? "Resolved"
-                    : !string.IsNullOrEmpty(key) ? "Unresolved" : "MissingKey"
-            };
-        }
-
-        private JToken SerializeEnum(Enum value)
-        {
-            string localized;
-            string source;
-            bool resolved = m_Localization.TryResolveEnum(value, out localized, out source);
-            return new JObject
-            {
-                ["Kind"] = "Enum",
-                ["Type"] = value.GetType().FullName,
-                ["Raw"] = value.ToString(),
-                ["Numeric"] = GetEnumNumericValue(value),
-                ["Localized"] = resolved ? localized : string.Empty,
-                ["ResolutionSource"] = resolved ? source : string.Empty,
-                ["ResolutionStatus"] = resolved ? "Resolved" : "Unresolved"
+                ["ResolutionStatus"] = status
             };
         }
 
@@ -267,6 +268,7 @@ namespace KingmakerSmartSorter
 
             if (entries.Count > count)
             {
+                TrackTruncation("EmergencyCollectionLimit");
                 AddError(
                     path,
                     "EmergencyCollectionLimit",
@@ -301,6 +303,7 @@ namespace KingmakerSmartSorter
                 {
                     if (index >= EmergencyMaxCollectionItems)
                     {
+                        TrackTruncation("EmergencyCollectionLimit");
                         AddError(
                             path,
                             "EmergencyCollectionLimit",
@@ -338,6 +341,7 @@ namespace KingmakerSmartSorter
             existingReference = null;
             if (m_ObjectIds.TryGetValue(value, out id))
             {
+                TrackObjectReference();
                 existingReference = CreateReference(id);
                 return false;
             }
@@ -356,16 +360,6 @@ namespace KingmakerSmartSorter
             id = "object:" + (++m_NextObjectId).ToString("D8");
             m_ObjectIds.Add(value, id);
             return true;
-        }
-
-        private static JToken SerializeUnityObject(UnityEngine.Object value)
-        {
-            return new JObject
-            {
-                ["Kind"] = "UnityObject",
-                ["Type"] = value.GetType().FullName,
-                ["Name"] = SafeUnityName(value)
-            };
         }
 
         private static bool IsRuntimeExternal(Type type)

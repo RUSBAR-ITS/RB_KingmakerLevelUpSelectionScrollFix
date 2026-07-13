@@ -188,13 +188,23 @@ namespace KingmakerSmartSorter
                 ItemDiagnosticTab.Miscellaneous,
                 "Settings.ExportMiscellaneous");
             GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            DrawDiagnosticButton(
+                ItemDiagnosticTab.AllBlueprintItems,
+                "Settings.ExportAllBlueprints",
+                524f);
+            GUILayout.EndHorizontal();
         }
 
-        private void DrawDiagnosticButton(ItemDiagnosticTab tab, string localizationKey)
+        private void DrawDiagnosticButton(
+            ItemDiagnosticTab tab,
+            string localizationKey,
+            float width = 260f)
         {
             if (!GUILayout.Button(
                 ModLocalization.T(localizationKey),
-                GUILayout.Width(260f)))
+                GUILayout.Width(width)))
             {
                 return;
             }

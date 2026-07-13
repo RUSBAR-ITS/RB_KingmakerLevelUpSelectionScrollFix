@@ -8,7 +8,7 @@ namespace KingmakerSmartSorter
 {
     internal sealed class GameLocalizationResolver
     {
-        private const int ProviderScanDepth = 4;
+        private const int ProviderScanDepth = 8;
 
         private readonly Dictionary<Type, ResolverBinding> m_EnumResolvers =
             new Dictionary<Type, ResolverBinding>();

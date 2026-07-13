@@ -16,6 +16,8 @@ namespace KingmakerSmartSorter
 
         private static readonly Dictionary<Type, FieldInfo[]> s_FieldCache =
             new Dictionary<Type, FieldInfo[]>();
+        private static readonly Dictionary<Type, PropertyInfo[]> s_PropertyCache =
+            new Dictionary<Type, PropertyInfo[]>();
 
         private readonly GameLocalizationResolver m_Localization;
         private readonly Dictionary<string, JObject> m_BlueprintNodes =
@@ -33,6 +35,7 @@ namespace KingmakerSmartSorter
         private int m_NextAnonymousBlueprintId;
         private int m_NextObjectId;
         private int m_TotalNodeCount;
+        private int m_SuppressedErrorCount;
 
         internal DiagnosticGraphBuilder(GameLocalizationResolver localization)
         {
@@ -54,6 +57,11 @@ namespace KingmakerSmartSorter
             get { return m_Errors.Count; }
         }
 
+        internal int SuppressedErrorCount
+        {
+            get { return m_SuppressedErrorCount; }
+        }
+
         internal JToken ReferenceBlueprint(BlueprintScriptableObject blueprint, string path)
         {
             if (blueprint == null)
@@ -63,7 +71,8 @@ namespace KingmakerSmartSorter
 
             string id = GetBlueprintId(blueprint);
             EnsureBlueprintNode(blueprint, id, path);
-            return CreateReference(id);
+            TrackBlueprintReference();
+            return CreateBlueprintReference(blueprint, id);
         }
 
         internal JObject CreateLocalizedValue(
@@ -84,6 +93,8 @@ namespace KingmakerSmartSorter
             {
                 RegisterLocalization(key, effectiveResolved, path);
             }
+
+            TrackLocalizedValue(status, key);
 
             return new JObject
             {
@@ -202,6 +213,7 @@ namespace KingmakerSmartSorter
                 ["$id"] = id,
                 ["Kind"] = "Blueprint",
                 ["Type"] = blueprint.GetType().FullName,
+                ["ShortType"] = blueprint.GetType().Name,
                 ["Guid"] = SafeBlueprintGuid(blueprint),
                 ["InternalName"] = SafeUnityName(blueprint),
                 ["ResolvedName"] = ReadStringProperty(blueprint, "Name"),
@@ -212,6 +224,10 @@ namespace KingmakerSmartSorter
             try
             {
                 node["Fields"] = SerializeFields(blueprint, path + "/fields", 1);
+                node["Properties"] = SerializeProperties(
+                    blueprint,
+                    path + "/properties",
+                    1);
             }
             catch (Exception ex)
             {
@@ -264,6 +280,7 @@ namespace KingmakerSmartSorter
         {
             if (m_TotalNodeCount >= EmergencyMaxNodes)
             {
+                TrackTruncation("EmergencyNodeLimit");
                 AddError(
                     path,
                     "EmergencyNodeLimit",
@@ -284,6 +301,7 @@ namespace KingmakerSmartSorter
         {
             if (m_Errors.Count >= EmergencyMaxErrors)
             {
+                m_SuppressedErrorCount++;
                 return;
             }
 
@@ -299,6 +317,23 @@ namespace KingmakerSmartSorter
         private static JObject CreateReference(string id)
         {
             return new JObject { ["$ref"] = id };
+        }
+
+        private static JObject CreateBlueprintReference(
+            BlueprintScriptableObject blueprint,
+            string id)
+        {
+            return new JObject
+            {
+                ["$ref"] = id,
+                ["Kind"] = "BlueprintReference",
+                ["Type"] = blueprint.GetType().FullName,
+                ["ShortType"] = blueprint.GetType().Name,
+                ["Guid"] = SafeBlueprintGuid(blueprint),
+                ["InternalName"] = SafeUnityName(blueprint),
+                ["ResolvedName"] = ReadStringProperty(blueprint, "Name"),
+                ["ResolvedDescription"] = ReadStringProperty(blueprint, "Description")
+            };
         }
 
         private static string SafeBlueprintGuid(BlueprintScriptableObject blueprint)

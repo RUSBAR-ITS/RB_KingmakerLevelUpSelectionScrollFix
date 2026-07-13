@@ -7,7 +7,8 @@ namespace KingmakerSmartSorter
         Accessories,
         Usable,
         Notable,
-        Miscellaneous
+        Miscellaneous,
+        AllBlueprintItems
     }
 
     internal static class ItemDiagnosticTabInfo
@@ -24,6 +25,8 @@ namespace KingmakerSmartSorter
                     return ItemsFilter.FilterType.Notable;
                 case ItemDiagnosticTab.Miscellaneous:
                     return ItemsFilter.FilterType.NonUsable;
+                case ItemDiagnosticTab.AllBlueprintItems:
+                    return ItemsFilter.FilterType.NoFilter;
                 default:
                     return ItemsFilter.FilterType.NoFilter;
             }
@@ -41,6 +44,8 @@ namespace KingmakerSmartSorter
                     return "Items_Notable.json";
                 case ItemDiagnosticTab.Miscellaneous:
                     return "Items_Misc.json";
+                case ItemDiagnosticTab.AllBlueprintItems:
+                    return "Items_AllBlueprints.json";
                 default:
                     return "Items_Unknown.json";
             }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using Kingmaker;
+using Kingmaker.Blueprints;
 using Kingmaker.Blueprints.Items;
 using Kingmaker.Blueprints.Items.Ecnchantments;
 using Kingmaker.Blueprints.Root;
@@ -17,7 +18,7 @@ namespace KingmakerSmartSorter
     internal static class ItemDiagnosticExporter
     {
         private const string DiagnosticsDirectoryName = "Diagnostics";
-        private const int SchemaVersion = 1;
+        private const int SchemaVersion = 2;
 
         internal static ItemDiagnosticExportResult Export(
             string modPath,
@@ -37,7 +38,9 @@ namespace KingmakerSmartSorter
                 ItemsFilter.FilterType filter = ItemDiagnosticTabInfo.GetFilter(tab);
                 GameLocalizationResolver localization = new GameLocalizationResolver();
                 DiagnosticGraphBuilder graph = new DiagnosticGraphBuilder(localization);
-                JArray entities = BuildEntities(filter, graph);
+                JArray entities = tab == ItemDiagnosticTab.AllBlueprintItems
+                    ? BuildBlueprintCatalog(graph)
+                    : BuildEntities(filter, graph);
 
                 JObject report = BuildReport(
                     tab,
@@ -68,8 +71,16 @@ namespace KingmakerSmartSorter
                     + result.BlueprintCount
                     + ", graphNodes="
                     + graph.TotalNodeCount
+                    + ", expandedComponents="
+                    + graph.ExpandedComponentCount
+                    + ", potentiallyMechanicalTerminals="
+                    + graph.PotentialMechanicalTerminalCount
+                    + ", truncations="
+                    + graph.TruncationCount
                     + ", errors="
                     + graph.ErrorCount
+                    + ", suppressedErrors="
+                    + graph.SuppressedErrorCount
                     + ", bytes="
                     + result.FileSize
                     + ", path="
@@ -115,6 +126,107 @@ namespace KingmakerSmartSorter
             }
 
             return result;
+        }
+
+        private static JArray BuildBlueprintCatalog(DiagnosticGraphBuilder graph)
+        {
+            List<BlueprintItem> blueprints =
+                new List<BlueprintItem>(ResourcesLibrary.GetBlueprints<BlueprintItem>());
+            blueprints.Sort(delegate(BlueprintItem left, BlueprintItem right)
+            {
+                return string.Compare(
+                    left == null ? string.Empty : left.AssetGuid,
+                    right == null ? string.Empty : right.AssetGuid,
+                    StringComparison.Ordinal);
+            });
+
+            HashSet<string> seenGuids = new HashSet<string>(StringComparer.Ordinal);
+            JArray result = new JArray();
+            for (int i = 0; i < blueprints.Count; i++)
+            {
+                BlueprintItem blueprint = blueprints[i];
+                if (blueprint == null)
+                {
+                    continue;
+                }
+
+                string guid = blueprint.AssetGuid ?? string.Empty;
+                if (!string.IsNullOrEmpty(guid) && !seenGuids.Add(guid))
+                {
+                    continue;
+                }
+
+                string path = "catalog/blueprints[" + i + "]";
+                try
+                {
+                    result.Add(BuildCatalogItem(blueprint, i, graph, path));
+                }
+                catch (Exception ex)
+                {
+                    graph.RecordError(path, "BuildCatalogItem", ex);
+                    result.Add(new JObject
+                    {
+                        ["CatalogIndex"] = i,
+                        ["BlueprintGuid"] = guid,
+                        ["Error"] = ex.Message
+                    });
+                }
+            }
+
+            return result;
+        }
+
+        private static JObject BuildCatalogItem(
+            BlueprintItem blueprint,
+            int catalogIndex,
+            DiagnosticGraphBuilder graph,
+            string path)
+        {
+            LocalizedString nameSource = graph.FindLocalizedString(
+                blueprint,
+                "m_DisplayNameText");
+            LocalizedString descriptionSource = graph.FindLocalizedString(
+                blueprint,
+                "m_DescriptionText");
+            LocalizedString flavorSource = graph.FindLocalizedString(
+                blueprint,
+                "m_FlavorText");
+
+            return new JObject
+            {
+                ["CatalogIndex"] = catalogIndex,
+                ["EntryType"] = "BlueprintCatalogItem",
+                ["Name"] = graph.CreateLocalizedValue(
+                    blueprint.Name,
+                    nameSource,
+                    path + "/name"),
+                ["Description"] = graph.CreateLocalizedValue(
+                    blueprint.Description,
+                    descriptionSource,
+                    path + "/description"),
+                ["FlavorText"] = graph.CreateLocalizedValue(
+                    blueprint.FlavorText,
+                    flavorSource,
+                    path + "/flavorText"),
+                ["Cost"] = blueprint.Cost,
+                ["Weight"] = blueprint.Weight,
+                ["IdentifyDC"] = blueprint.IdentifyDC,
+                ["IsActuallyStackable"] = blueprint.IsActuallyStackable,
+                ["Blueprint"] = graph.ReferenceBlueprint(blueprint, path + "/blueprint"),
+                ["Enchantments"] = BuildBlueprintEnchantments(
+                    blueprint,
+                    graph,
+                    path + "/enchantments"),
+                ["BlueprintGuid"] = blueprint.AssetGuid ?? string.Empty,
+                ["BlueprintType"] = blueprint.GetType().FullName,
+                ["BlueprintItemType"] = graph.SerializeValue(
+                    blueprint.ItemType,
+                    path + "/blueprintItemType"),
+                ["BlueprintIsNotable"] = blueprint.IsNotable,
+                ["BlueprintMiscellaneousType"] = graph.SerializeValue(
+                    blueprint.MiscellaneousType,
+                    path + "/miscellaneousType")
+            };
         }
 
         private static JObject BuildEntity(
@@ -220,6 +332,31 @@ namespace KingmakerSmartSorter
             return result;
         }
 
+        private static JArray BuildBlueprintEnchantments(
+            BlueprintItem item,
+            DiagnosticGraphBuilder graph,
+            string path)
+        {
+            JArray result = new JArray();
+            int index = 0;
+            try
+            {
+                foreach (BlueprintItemEnchantment enchantment in item.Enchantments)
+                {
+                    result.Add(graph.ReferenceBlueprint(
+                        enchantment,
+                        path + "/[" + index + "]"));
+                    index++;
+                }
+            }
+            catch (Exception ex)
+            {
+                graph.RecordError(path, "CollectBlueprintEnchantments", ex);
+            }
+
+            return result;
+        }
+
         private static JObject BuildReport(
             ItemDiagnosticTab tab,
             ItemsFilter.FilterType filter,
@@ -230,12 +367,19 @@ namespace KingmakerSmartSorter
             string localizedFilter = string.Empty;
             try
             {
-                BlueprintRoot root = BlueprintRoot.Instance;
-                if (root != null
-                    && root.LocalizedTexts != null
-                    && root.LocalizedTexts.ItemsFilter != null)
+                if (tab == ItemDiagnosticTab.AllBlueprintItems)
                 {
-                    localizedFilter = root.LocalizedTexts.ItemsFilter.GetText(filter);
+                    localizedFilter = "All BlueprintItem objects";
+                }
+                else
+                {
+                    BlueprintRoot root = BlueprintRoot.Instance;
+                    if (root != null
+                        && root.LocalizedTexts != null
+                        && root.LocalizedTexts.ItemsFilter != null)
+                    {
+                        localizedFilter = root.LocalizedTexts.ItemsFilter.GetText(filter);
+                    }
                 }
             }
             catch (Exception ex)
@@ -245,6 +389,9 @@ namespace KingmakerSmartSorter
 
             JArray blueprintGraph = graph.BuildBlueprintGraph();
             JArray localizationIndex = graph.BuildLocalizationIndex();
+            JArray enumIndex = graph.BuildEnumIndex();
+            JArray uniqueItems = BuildUniqueItems(entities);
+            JObject coverage = graph.BuildCoverage();
             JArray errors = graph.BuildErrors();
             return new JObject
             {
@@ -256,7 +403,13 @@ namespace KingmakerSmartSorter
                     ["GeneratedUtc"] = DateTime.UtcNow.ToString(
                         "o",
                         CultureInfo.InvariantCulture),
-                    ["Locale"] = localization.CurrentLocale
+                    ["Locale"] = localization.CurrentLocale,
+                    ["SourceScope"] = tab == ItemDiagnosticTab.AllBlueprintItems
+                        ? "ResourcesLibrary.GetBlueprints<BlueprintItem>"
+                        : "CurrentPlayerInventory",
+                    ["SourceDescription"] = tab == ItemDiagnosticTab.AllBlueprintItems
+                        ? "Entries are unique BlueprintItem objects currently available from the loaded game resource library. UI tab membership is intentionally not inferred without a real ItemEntity."
+                        : "Entities are exact matches from the current player inventory. UniqueItems deduplicates only this export and is not a claim that every BlueprintItem in the game is present."
                 },
                 ["Filter"] = new JObject
                 {
@@ -268,16 +421,101 @@ namespace KingmakerSmartSorter
                 ["Statistics"] = new JObject
                 {
                     ["EntityCount"] = entities.Count,
+                    ["UniqueItemCount"] = uniqueItems.Count,
                     ["BlueprintCount"] = blueprintGraph.Count,
                     ["GraphNodeCount"] = graph.TotalNodeCount,
+                    ["ExpandedBlueprintComponentCount"] = graph.ExpandedComponentCount,
+                    ["PotentiallyMechanicalTerminalCount"] =
+                        graph.PotentialMechanicalTerminalCount,
+                    ["TruncationCount"] = graph.TruncationCount,
                     ["LocalizationEntryCount"] = localizationIndex.Count,
-                    ["ErrorCount"] = errors.Count
+                    ["EnumEntryCount"] = enumIndex.Count,
+                    ["ErrorCount"] = errors.Count,
+                    ["SuppressedErrorCount"] = graph.SuppressedErrorCount
                 },
                 ["Entities"] = entities,
+                ["UniqueItems"] = uniqueItems,
                 ["BlueprintGraph"] = blueprintGraph,
                 ["Localization"] = localizationIndex,
+                ["EnumIndex"] = enumIndex,
+                ["Coverage"] = coverage,
                 ["Errors"] = errors
             };
+        }
+
+        private static JArray BuildUniqueItems(JArray entities)
+        {
+            Dictionary<string, JObject> byGuid =
+                new Dictionary<string, JObject>(StringComparer.Ordinal);
+            for (int i = 0; i < entities.Count; i++)
+            {
+                JObject entity = entities[i] as JObject;
+                if (entity == null)
+                {
+                    continue;
+                }
+
+                string guid = (string)entity["BlueprintGuid"] ?? string.Empty;
+                if (string.IsNullOrEmpty(guid))
+                {
+                    continue;
+                }
+
+                JObject summary;
+                if (!byGuid.TryGetValue(guid, out summary))
+                {
+                    summary = new JObject
+                    {
+                        ["BlueprintGuid"] = guid,
+                        ["BlueprintType"] = (string)entity["BlueprintType"] ?? string.Empty,
+                        ["Name"] = CloneOrNull(entity["Name"]),
+                        ["Description"] = CloneOrNull(entity["Description"]),
+                        ["FlavorText"] = CloneOrNull(entity["FlavorText"]),
+                        ["Cost"] = CloneOrNull(entity["Cost"]),
+                        ["BlueprintItemType"] = CloneOrNull(entity["BlueprintItemType"]),
+                        ["BlueprintIsNotable"] = CloneOrNull(entity["BlueprintIsNotable"]),
+                        ["BlueprintMiscellaneousType"] = CloneOrNull(
+                            entity["BlueprintMiscellaneousType"]),
+                        ["Blueprint"] = CloneOrNull(entity["Blueprint"]),
+                        ["OccurrenceCount"] = 0,
+                        ["EntityIndexes"] = new JArray()
+                    };
+                    byGuid.Add(guid, summary);
+                }
+
+                summary["OccurrenceCount"] = (int)summary["OccurrenceCount"] + 1;
+                ((JArray)summary["EntityIndexes"]).Add(i);
+            }
+
+            List<JObject> items = new List<JObject>(byGuid.Values);
+            items.Sort(delegate(JObject left, JObject right)
+            {
+                string leftName = ReadLocalizedName(left);
+                string rightName = ReadLocalizedName(right);
+                int name = string.Compare(
+                    leftName,
+                    rightName,
+                    StringComparison.CurrentCultureIgnoreCase);
+                return name != 0
+                    ? name
+                    : string.Compare(
+                        (string)left["BlueprintGuid"],
+                        (string)right["BlueprintGuid"],
+                        StringComparison.Ordinal);
+            });
+
+            return new JArray(items);
+        }
+
+        private static JToken CloneOrNull(JToken value)
+        {
+            return value == null ? JValue.CreateNull() : value.DeepClone();
+        }
+
+        private static string ReadLocalizedName(JObject item)
+        {
+            JObject name = item == null ? null : item["Name"] as JObject;
+            return name == null ? string.Empty : (string)name["Localized"] ?? string.Empty;
         }
     }
 }
