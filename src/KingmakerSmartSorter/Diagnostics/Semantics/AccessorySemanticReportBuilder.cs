@@ -6,7 +6,7 @@ namespace KingmakerSmartSorter
 {
     internal static class AccessorySemanticReportBuilder
     {
-        private const int SchemaVersion = 2;
+        private const int SchemaVersion = 3;
 
         internal static JObject Build(JObject sourceReport)
         {

@@ -19,15 +19,16 @@ namespace KingmakerSmartSorter
             SemanticComponentClassification classification)
         {
             JObject parameters = m_Normalizer.NormalizeFields(mechanical);
+            string componentType = (string)mechanical["ShortType"]
+                ?? GetShortType((string)mechanical["Type"]);
             return new JObject
             {
                 ["Category"] = classification.Category,
                 ["CategoryDisplay"] = SemanticLocalization.Category(classification.Category),
-                ["ComponentType"] = (string)mechanical["ShortType"]
-                    ?? GetShortType((string)mechanical["Type"]),
+                ["ComponentType"] = componentType,
+                ["IsPresenceBased"] = SemanticEffectSummaryBuilder.IsPresenceBased(componentType),
                 ["Summary"] = SemanticEffectSummaryBuilder.Build(
-                    (string)mechanical["ShortType"]
-                        ?? GetShortType((string)mechanical["Type"]),
+                    componentType,
                     classification.Category,
                     parameters),
                 ["Parameters"] = parameters,

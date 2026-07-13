@@ -13,6 +13,11 @@ namespace KingmakerSmartSorter
             JObject parameters)
         {
             string type = componentType ?? string.Empty;
+            if (IsPresenceBased(type))
+            {
+                return SemanticLocalization.Component(type);
+            }
+
             if (type == "AllSavesBonusEquipment" || type == "BuffAllSavesBonus")
             {
                 return FormatBonus(
@@ -143,6 +148,14 @@ namespace KingmakerSmartSorter
             }
 
             return BuildGeneric(type, category, parameters);
+        }
+
+        internal static bool IsPresenceBased(string componentType)
+        {
+            return componentType == "AddImmunityToCriticalHits"
+                || componentType == "AddImmunityToEnergyDrain"
+                || componentType == "AddImmunityToPrecisionDamage"
+                || componentType == "AddImmunityToAbilityScoreDamage";
         }
 
         private static string BuildGeneric(

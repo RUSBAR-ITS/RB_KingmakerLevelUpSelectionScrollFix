@@ -12,6 +12,7 @@ namespace KingmakerSmartSorter
             int missingDescriptionCount = 0;
             int genericSummaryCount = 0;
             int emptyParameterEffectCount = 0;
+            int presenceBasedEffectCount = 0;
             int missingSourceCount = 0;
             int technicalReferenceNameFallbackCount = 0;
             int maxEffectCount = 0;
@@ -70,7 +71,14 @@ namespace KingmakerSmartSorter
                     }
 
                     JObject parameters = effect["Parameters"] as JObject;
-                    if (parameters == null || parameters.Count == 0)
+                    bool isPresenceBased = (bool?)effect["IsPresenceBased"] == true;
+                    if (isPresenceBased)
+                    {
+                        presenceBasedEffectCount++;
+                    }
+
+                    if (!isPresenceBased
+                        && (parameters == null || parameters.Count == 0))
                     {
                         emptyParameterEffectCount++;
                     }
@@ -94,6 +102,7 @@ namespace KingmakerSmartSorter
                 ["MissingDescriptionCount"] = missingDescriptionCount,
                 ["GenericSummaryCount"] = genericSummaryCount,
                 ["EmptyParameterEffectCount"] = emptyParameterEffectCount,
+                ["PresenceBasedEffectCount"] = presenceBasedEffectCount,
                 ["MissingSourceCount"] = missingSourceCount,
                 ["TechnicalReferenceNameFallbackCount"] = technicalReferenceNameFallbackCount,
                 ["MaximumEffectCountOnItem"] = maxEffectCount,
