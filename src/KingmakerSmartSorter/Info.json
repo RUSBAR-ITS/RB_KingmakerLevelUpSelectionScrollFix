@@ -2,7 +2,7 @@
   "Id": "KingmakerSmartSorter",
   "DisplayName": "Kingmaker Smart Sorter",
   "Author": "RUSBAR",
-  "Version": "0.6.0",
+  "Version": "0.7.0",
   "ManagerVersion": "0.32.0",
   "AssemblyName": "KingmakerSmartSorter.dll",
   "EntryMethod": "KingmakerSmartSorter.Main.Load",

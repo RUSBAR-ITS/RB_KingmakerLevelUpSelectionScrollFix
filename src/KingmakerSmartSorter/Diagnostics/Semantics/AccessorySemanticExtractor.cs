@@ -49,19 +49,20 @@ namespace KingmakerSmartSorter
             while (queue.Count > 0)
             {
                 BlueprintWorkItem work = queue.Dequeue();
-                if (work.Depth > MaxBlueprintDepth)
+                if (work.Source.Depth > MaxBlueprintDepth)
                 {
                     m_Coverage.TraversalLimitCount++;
                     continue;
                 }
 
                 JObject blueprint = m_Graph.ResolveBlueprint(work.Reference);
-                string nodeId = GetBlueprintNodeId(work.Reference, blueprint);
                 if (blueprint == null)
                 {
                     m_Coverage.MissingBlueprintCount++;
                     continue;
                 }
+
+                string nodeId = GetBlueprintNodeId(work.Reference, blueprint);
 
                 if (!visitedBlueprints.Add(nodeId))
                 {
@@ -71,7 +72,7 @@ namespace KingmakerSmartSorter
                 m_Coverage.BlueprintVisitCount++;
                 string blueprintType = (string)blueprint["ShortType"] ?? string.Empty;
                 if (SemanticTraversalPolicy.IsDirectItemAbility(
-                    work.Relationship,
+                    work.Source.Relationship,
                     blueprintType))
                 {
                     string syntheticId = nodeId + "|DirectItemAbility";
@@ -79,8 +80,11 @@ namespace KingmakerSmartSorter
                     {
                         effects.Add(SemanticEffectJsonBuilder.BuildDirectAbility(
                             blueprint,
-                            work.Relationship));
-                        m_Coverage.RecognizedEffectCount++;
+                            work.Source));
+                        m_Coverage.AddRecognizedEffect(
+                            work.Source,
+                            "GrantedAbility",
+                            true);
                     }
                 }
 
@@ -105,9 +109,12 @@ namespace KingmakerSmartSorter
                             effects.Add(m_EffectBuilder.Build(
                                 mechanical,
                                 blueprint,
-                                work.Relationship,
+                                work.Source,
                                 classification));
-                            m_Coverage.RecognizedEffectCount++;
+                            m_Coverage.AddRecognizedEffect(
+                                work.Source,
+                                classification.Category,
+                                false);
                         }
                     }
                     else if (classification.Structural)
@@ -140,8 +147,9 @@ namespace KingmakerSmartSorter
                         queue.Enqueue(new BlueprintWorkItem
                         {
                             Reference = link.Reference,
-                            Relationship = shortType + "." + link.FieldName,
-                            Depth = work.Depth + 1
+                            Source = work.Source.Child(
+                                link.Reference,
+                                shortType + "." + link.FieldName)
                         });
                     }
                 }
@@ -161,18 +169,24 @@ namespace KingmakerSmartSorter
                     queue.Enqueue(new BlueprintWorkItem
                     {
                         Reference = link.Reference,
-                        Relationship = blueprintType + "." + link.FieldName,
-                        Depth = work.Depth + 1
+                        Source = work.Source.Child(
+                            link.Reference,
+                            blueprintType + "." + link.FieldName)
                     });
                 }
             }
 
             List<string> categories = CollectCategories(effects);
+            string internalName = ReadInternalName(uniqueItem);
+            string localizedName = ReadLocalized(uniqueItem["Name"]);
+            bool usesInternalName = string.IsNullOrEmpty(localizedName);
+            string displayName = usesInternalName ? internalName : localizedName;
             return new JObject
             {
                 ["BlueprintGuid"] = (string)uniqueItem["BlueprintGuid"] ?? string.Empty,
-                ["InternalName"] = ReadInternalName(uniqueItem),
-                ["Name"] = ReadLocalized(uniqueItem["Name"]),
+                ["InternalName"] = internalName,
+                ["Name"] = displayName,
+                ["NameSource"] = usesInternalName ? "InternalNameFallback" : "GameLocalization",
                 ["Description"] = ReadLocalized(uniqueItem["Description"]),
                 ["Slot"] = NormalizeSlot(entity == null ? null : entity["FilterItemType"] as JObject),
                 ["Cost"] = uniqueItem["Cost"] == null
@@ -182,8 +196,26 @@ namespace KingmakerSmartSorter
                 ["Effects"] = effects,
                 ["UnhandledComponents"] = BuildUnhandled(unhandled),
                 ["HasRecognizedEffects"] = effects.Count > 0,
+                ["DirectEffectCount"] = CountEffectsByScope(effects, "Direct"),
+                ["GrantedEffectCount"] = CountEffectsByScope(effects, "Granted"),
+                ["NestedEffectCount"] = CountEffectsByScope(effects, "Nested"),
                 ["VisitedBlueprintCount"] = visitedBlueprints.Count
             };
+        }
+
+        private static int CountEffectsByScope(JArray effects, string scope)
+        {
+            int result = 0;
+            for (int i = 0; i < effects.Count; i++)
+            {
+                JObject source = effects[i]["Source"] as JObject;
+                if (source != null && (string)source["Scope"] == scope)
+                {
+                    result++;
+                }
+            }
+
+            return result;
         }
 
         private static List<string> CollectCategories(JArray effects)
@@ -295,16 +327,14 @@ namespace KingmakerSmartSorter
             queue.Enqueue(new BlueprintWorkItem
             {
                 Reference = reference,
-                Relationship = relationship,
-                Depth = 0
+                Source = SemanticSourceContext.Root(reference, relationship)
             });
         }
 
         private sealed class BlueprintWorkItem
         {
             internal JObject Reference;
-            internal string Relationship;
-            internal int Depth;
+            internal SemanticSourceContext Source;
         }
     }
 }

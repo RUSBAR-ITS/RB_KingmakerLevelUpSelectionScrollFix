@@ -17,6 +17,18 @@ namespace KingmakerSmartSorter
 
         internal int RecognizedEffectCount { get; set; }
 
+        internal int RecognizedMechanicalEffectCount { get; private set; }
+
+        internal int SyntheticAbilityCount { get; private set; }
+
+        internal int DirectEffectCount { get; private set; }
+
+        internal int NestedEffectCount { get; private set; }
+
+        internal int GrantedEffectCount { get; private set; }
+
+        internal int ConditionEffectCount { get; private set; }
+
         internal int StructuralObjectCount { get; set; }
 
         internal int UnhandledObjectCount { get; set; }
@@ -24,6 +36,41 @@ namespace KingmakerSmartSorter
         internal int MissingBlueprintCount { get; set; }
 
         internal int TraversalLimitCount { get; set; }
+
+        internal void AddRecognizedEffect(
+            SemanticSourceContext source,
+            string category,
+            bool syntheticAbility)
+        {
+            RecognizedEffectCount++;
+            if (syntheticAbility)
+            {
+                SyntheticAbilityCount++;
+            }
+            else
+            {
+                RecognizedMechanicalEffectCount++;
+            }
+
+            string scope = source == null ? "Direct" : source.GetScope(syntheticAbility);
+            if (scope == "Nested")
+            {
+                NestedEffectCount++;
+            }
+            else if (scope == "Granted")
+            {
+                GrantedEffectCount++;
+            }
+            else
+            {
+                DirectEffectCount++;
+            }
+
+            if (category == "Condition" || category == "Restriction")
+            {
+                ConditionEffectCount++;
+            }
+        }
 
         internal void AddUnhandled(string type, string samplePath)
         {
@@ -72,6 +119,12 @@ namespace KingmakerSmartSorter
                 ["BlueprintVisitCount"] = BlueprintVisitCount,
                 ["MechanicalObjectCount"] = MechanicalObjectCount,
                 ["RecognizedEffectCount"] = RecognizedEffectCount,
+                ["RecognizedMechanicalEffectCount"] = RecognizedMechanicalEffectCount,
+                ["SyntheticAbilityCount"] = SyntheticAbilityCount,
+                ["DirectEffectCount"] = DirectEffectCount,
+                ["GrantedEffectCount"] = GrantedEffectCount,
+                ["NestedEffectCount"] = NestedEffectCount,
+                ["ConditionOrRestrictionEffectCount"] = ConditionEffectCount,
                 ["StructuralObjectCount"] = StructuralObjectCount,
                 ["UnhandledObjectCount"] = UnhandledObjectCount,
                 ["MissingBlueprintCount"] = MissingBlueprintCount,

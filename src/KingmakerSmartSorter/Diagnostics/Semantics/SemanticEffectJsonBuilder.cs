@@ -15,7 +15,7 @@ namespace KingmakerSmartSorter
         internal JObject Build(
             JObject mechanical,
             JObject sourceBlueprint,
-            string relationship,
+            SemanticSourceContext source,
             SemanticComponentClassification classification)
         {
             JObject parameters = m_Normalizer.NormalizeFields(mechanical);
@@ -25,21 +25,27 @@ namespace KingmakerSmartSorter
                 ["CategoryDisplay"] = SemanticLocalization.Category(classification.Category),
                 ["ComponentType"] = (string)mechanical["ShortType"]
                     ?? GetShortType((string)mechanical["Type"]),
-                ["Summary"] = BuildSummary(classification.Category, parameters),
+                ["Summary"] = SemanticEffectSummaryBuilder.Build(
+                    (string)mechanical["ShortType"]
+                        ?? GetShortType((string)mechanical["Type"]),
+                    classification.Category,
+                    parameters),
                 ["Parameters"] = parameters,
-                ["Source"] = BuildSource(sourceBlueprint, relationship, mechanical)
+                ["Source"] = BuildSource(sourceBlueprint, source, mechanical, false)
             };
         }
 
         internal static JObject BuildDirectAbility(
             JObject blueprint,
-            string relationship)
+            SemanticSourceContext source)
         {
             string name = (string)blueprint["ResolvedName"];
             if (string.IsNullOrEmpty(name))
             {
                 name = (string)blueprint["InternalName"] ?? string.Empty;
             }
+
+            bool usesInternalName = string.IsNullOrEmpty((string)blueprint["ResolvedName"]);
 
             return new JObject
             {
@@ -58,6 +64,9 @@ namespace KingmakerSmartSorter
                         ["Guid"] = (string)blueprint["Guid"] ?? string.Empty,
                         ["InternalName"] = (string)blueprint["InternalName"] ?? string.Empty,
                         ["Name"] = name,
+                        ["NameSource"] = usesInternalName
+                            ? "InternalNameFallback"
+                            : "GameLocalization",
                         ["Description"] = (string)blueprint["ResolvedDescription"] ?? string.Empty
                     }
                 },
@@ -67,7 +76,16 @@ namespace KingmakerSmartSorter
                     ["BlueprintType"] = (string)blueprint["ShortType"] ?? string.Empty,
                     ["InternalName"] = (string)blueprint["InternalName"] ?? string.Empty,
                     ["Name"] = name,
-                    ["Relationship"] = relationship ?? string.Empty,
+                    ["Relationship"] = source == null
+                        ? string.Empty
+                        : source.Relationship,
+                    ["Origin"] = source == null ? string.Empty : source.Origin,
+                    ["Depth"] = source == null ? 0 : source.Depth,
+                    ["Scope"] = "Direct",
+                    ["ScopeDisplay"] = SemanticLocalization.Scope("Direct"),
+                    ["Chain"] = source == null || source.Chain == null
+                        ? new JArray()
+                        : source.Chain.DeepClone(),
                     ["Path"] = (string)blueprint["FirstSourcePath"] ?? string.Empty
                 }
             };
@@ -75,90 +93,29 @@ namespace KingmakerSmartSorter
 
         private static JObject BuildSource(
             JObject sourceBlueprint,
-            string relationship,
-            JObject mechanical)
+            SemanticSourceContext source,
+            JObject mechanical,
+            bool forceDirect)
         {
+            string scope = source == null ? "Direct" : source.GetScope(forceDirect);
             return new JObject
             {
                 ["BlueprintGuid"] = (string)sourceBlueprint["Guid"] ?? string.Empty,
                 ["BlueprintType"] = (string)sourceBlueprint["ShortType"] ?? string.Empty,
                 ["InternalName"] = (string)sourceBlueprint["InternalName"] ?? string.Empty,
                 ["Name"] = (string)sourceBlueprint["ResolvedName"] ?? string.Empty,
-                ["Relationship"] = relationship ?? string.Empty,
+                ["Relationship"] = source == null
+                    ? string.Empty
+                    : source.Relationship,
+                ["Origin"] = source == null ? string.Empty : source.Origin,
+                ["Depth"] = source == null ? 0 : source.Depth,
+                ["Scope"] = scope,
+                ["ScopeDisplay"] = SemanticLocalization.Scope(scope),
+                ["Chain"] = source == null || source.Chain == null
+                    ? new JArray()
+                    : source.Chain.DeepClone(),
                 ["Path"] = (string)mechanical["SourcePath"] ?? string.Empty
             };
-        }
-
-        private static string BuildSummary(string category, JObject parameters)
-        {
-            string stat = SemanticValueNormalizer.ReadDisplay(parameters["Stat"]);
-            string descriptor = SemanticValueNormalizer.ReadDisplay(parameters["Descriptor"]);
-            string value = SemanticValueNormalizer.ReadDisplay(parameters["Value"]);
-
-            if (!string.IsNullOrEmpty(stat) && !string.IsNullOrEmpty(value))
-            {
-                return string.Format(
-                    System.Globalization.CultureInfo.CurrentCulture,
-                    SemanticLocalization.Template("Bonus", "{2}: {1} ({0})"),
-                    string.IsNullOrEmpty(descriptor)
-                        ? SemanticLocalization.Category(category)
-                        : descriptor,
-                    FormatSigned(value),
-                    stat);
-            }
-
-            string target = FirstDisplay(
-                parameters,
-                "Feature",
-                "Fact",
-                "Ability",
-                "Spell",
-                "Buff",
-                "SpellDescriptor",
-                "EnergyType",
-                "DamageType");
-            if (string.IsNullOrEmpty(target))
-            {
-                return SemanticLocalization.Category(category);
-            }
-
-            if (string.IsNullOrEmpty(value))
-            {
-                return string.Format(
-                    System.Globalization.CultureInfo.CurrentCulture,
-                    SemanticLocalization.Template("Target", "{0}: {1}"),
-                    SemanticLocalization.Category(category),
-                    target);
-            }
-
-            return string.Format(
-                System.Globalization.CultureInfo.CurrentCulture,
-                SemanticLocalization.Template("TargetValue", "{0}: {2} ({1})"),
-                SemanticLocalization.Category(category),
-                target,
-                FormatSigned(value));
-        }
-
-        private static string FirstDisplay(JObject parameters, params string[] names)
-        {
-            for (int i = 0; i < names.Length; i++)
-            {
-                string value = SemanticValueNormalizer.ReadDisplay(parameters[names[i]]);
-                if (!string.IsNullOrEmpty(value))
-                {
-                    return value;
-                }
-            }
-
-            return string.Empty;
-        }
-
-        private static string FormatSigned(string value)
-        {
-            int numeric;
-            return int.TryParse(value, out numeric) && numeric > 0
-                ? "+" + value
-                : value;
         }
 
         private static string GetShortType(string fullType)

@@ -153,6 +153,9 @@ namespace KingmakerSmartSorter
                 case "Collection":
                     return NormalizeCollection(obj, depth, visitedObjects);
                 case "Object":
+                    return IsDisplayValueObject(obj)
+                        ? NormalizeValueObject(obj, depth, visitedObjects)
+                        : NormalizeObject(obj, depth, visitedObjects);
                 case "Element":
                 case "BlueprintComponent":
                     return NormalizeObject(obj, depth, visitedObjects);
@@ -186,7 +189,8 @@ namespace KingmakerSmartSorter
         private static JObject NormalizeBlueprintReference(JObject value)
         {
             string name = (string)value["ResolvedName"];
-            if (string.IsNullOrEmpty(name))
+            bool usesInternalName = string.IsNullOrEmpty(name);
+            if (usesInternalName)
             {
                 name = (string)value["InternalName"] ?? string.Empty;
             }
@@ -197,6 +201,9 @@ namespace KingmakerSmartSorter
                 ["Type"] = (string)value["ShortType"] ?? string.Empty,
                 ["InternalName"] = (string)value["InternalName"] ?? string.Empty,
                 ["Name"] = name,
+                ["NameSource"] = usesInternalName
+                    ? "InternalNameFallback"
+                    : "GameLocalization",
                 ["DescriptionPreview"] = (string)value["ResolvedDescriptionPreview"] ?? string.Empty
             };
         }
@@ -272,6 +279,11 @@ namespace KingmakerSmartSorter
 
             JObject result = new JObject();
             string shortType = (string)value["ShortType"];
+            if (string.IsNullOrEmpty(shortType))
+            {
+                shortType = GetShortType((string)value["Type"]);
+            }
+
             if (!string.IsNullOrEmpty(shortType))
             {
                 result["Type"] = shortType;
@@ -303,8 +315,39 @@ namespace KingmakerSmartSorter
                         "Kingmaker.Blueprints.Classes.Spells.SpellDescriptor",
                         numeric);
             }
+            else
+            {
+                string display = SemanticValueDisplayBuilder.Build(type, fields);
+                if (!string.IsNullOrEmpty(display))
+                {
+                    normalized["Display"] = display;
+                }
+            }
 
             return normalized;
+        }
+
+        private static string GetShortType(string type)
+        {
+            if (string.IsNullOrEmpty(type))
+            {
+                return string.Empty;
+            }
+
+            int nested = type.LastIndexOf('+');
+            int dotted = type.LastIndexOf('.');
+            int separator = Math.Max(nested, dotted);
+            return separator < 0 ? type : type.Substring(separator + 1);
+        }
+
+        private static bool IsDisplayValueObject(JObject value)
+        {
+            string type = (string)value["Type"] ?? string.Empty;
+            return type.EndsWith("ContextValue", StringComparison.Ordinal)
+                || type.EndsWith("ContextDiceValue", StringComparison.Ordinal)
+                || type.EndsWith("ContextDurationValue", StringComparison.Ordinal)
+                || type.EndsWith("DiceFormula", StringComparison.Ordinal)
+                || type.EndsWith(".Feet", StringComparison.Ordinal);
         }
 
         private JToken NormalizeGenericObject(

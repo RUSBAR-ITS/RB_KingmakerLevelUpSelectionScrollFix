@@ -6,7 +6,7 @@ namespace KingmakerSmartSorter
 {
     internal static class AccessorySemanticReportBuilder
     {
-        private const int SchemaVersion = 1;
+        private const int SchemaVersion = 2;
 
         internal static JObject Build(JObject sourceReport)
         {
@@ -58,9 +58,16 @@ namespace KingmakerSmartSorter
                         ? string.Empty
                         : (string)sourceMetadata["Locale"] ?? string.Empty,
                     ["Scope"] = "Accessories",
-                    ["Purpose"] = "Compact parameter-based accessory mechanics report. Descriptions are retained for verification and are not used to infer effects."
+                    ["Purpose"] = "Compact parameter-based accessory mechanics report. Descriptions are retained for verification and are not used to infer effects.",
+                    ["ScopeDefinitions"] = new JObject
+                    {
+                        ["Direct"] = "A component attached directly to the item or one of its enchantments, plus the item's directly exposed ability.",
+                        ["Granted"] = "A mechanic inside a feature or fact directly granted by the item.",
+                        ["Nested"] = "An implementation detail reached through an ability, buff, variant, or a deeper reference chain."
+                    }
                 },
                 ["Statistics"] = coverage.ToJson(),
+                ["Quality"] = SemanticReportQuality.Build(items),
                 ["Items"] = items
             };
         }
