@@ -8,8 +8,14 @@ namespace KingmakerSmartSorter
     public static class Main
     {
         internal const string ModId = "KingmakerSmartSorter";
+        internal const string ModVersion = "0.3.0";
 
         internal static Settings Settings;
+
+        internal static string ModPath
+        {
+            get { return s_ModEntry == null ? string.Empty : s_ModEntry.Path; }
+        }
 
         private static Harmony s_Harmony;
         private static UnityModManager.ModEntry s_ModEntry;
@@ -18,7 +24,7 @@ namespace KingmakerSmartSorter
         {
             s_ModEntry = modEntry;
             Logger.Initialize(modEntry.Logger);
-            Logger.Info("Loading mod version 0.2.0.");
+            Logger.Info("Loading mod version " + ModVersion + ".");
 
             try
             {

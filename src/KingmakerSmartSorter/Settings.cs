@@ -16,6 +16,7 @@ namespace KingmakerSmartSorter
 
         private string m_MaxDiagnosticSortRunsText;
         private string m_MaxDiagnosticItemsPerRunText;
+        private string m_ItemDiagnosticStatus;
 
         public override void Save(UnityModManager.ModEntry modEntry)
         {
@@ -59,6 +60,15 @@ namespace KingmakerSmartSorter
                     ref m_MaxDiagnosticItemsPerRunText,
                     1,
                     1000);
+            }
+
+            GUILayout.Space(8f);
+            GUILayout.Label(ModLocalization.T("Settings.ItemDiagnostics"));
+            GUILayout.Label(ModLocalization.T("Settings.ItemDiagnosticsHint"));
+            DrawDiagnosticButtons();
+            if (!string.IsNullOrEmpty(m_ItemDiagnosticStatus))
+            {
+                GUILayout.Label(m_ItemDiagnosticStatus);
             }
 
             GUILayout.EndVertical();
@@ -157,6 +167,50 @@ namespace KingmakerSmartSorter
             }
 
             return Mathf.Clamp(parsed, min, max);
+        }
+
+        private void DrawDiagnosticButtons()
+        {
+            GUILayout.BeginHorizontal();
+            DrawDiagnosticButton(
+                ItemDiagnosticTab.Accessories,
+                "Settings.ExportAccessories");
+            DrawDiagnosticButton(
+                ItemDiagnosticTab.Usable,
+                "Settings.ExportUsable");
+            GUILayout.EndHorizontal();
+
+            GUILayout.BeginHorizontal();
+            DrawDiagnosticButton(
+                ItemDiagnosticTab.Notable,
+                "Settings.ExportNotable");
+            DrawDiagnosticButton(
+                ItemDiagnosticTab.Miscellaneous,
+                "Settings.ExportMiscellaneous");
+            GUILayout.EndHorizontal();
+        }
+
+        private void DrawDiagnosticButton(ItemDiagnosticTab tab, string localizationKey)
+        {
+            if (!GUILayout.Button(
+                ModLocalization.T(localizationKey),
+                GUILayout.Width(260f)))
+            {
+                return;
+            }
+
+            ItemDiagnosticExportResult result = ItemDiagnosticExporter.Export(
+                Main.ModPath,
+                tab);
+            m_ItemDiagnosticStatus = result.Success
+                ? ModLocalization.T("Settings.ExportComplete")
+                    + ": "
+                    + result.ItemCount
+                    + Environment.NewLine
+                    + result.OutputPath
+                : ModLocalization.T("Settings.ExportFailed")
+                    + ": "
+                    + result.Error;
         }
     }
 }
